@@ -1,0 +1,105 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<div style="padding: 20px;">
+  <h1>System Dashboard</h1>
+
+  <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 30px;">
+    <div style="background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; min-width: 180px;">
+      <h3 style="margin:0; color: #666; font-size: 13px;">Restaurants</h3>
+      <p style="font-size: 28px; margin: 8px 0 0; font-weight: bold;">{{ total_restaurants }}</p>
+    </div>
+    <div style="background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; min-width: 180px;">
+      <h3 style="margin:0; color: #666; font-size: 13px;">Menu Items</h3>
+      <p style="font-size: 28px; margin: 8px 0 0; font-weight: bold;">{{ total_menu_items }}</p>
+    </div>
+    <div style="background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; min-width: 180px;">
+      <h3 style="margin:0; color: #666; font-size: 13px;">Total Orders</h3>
+      <p style="font-size: 28px; margin: 8px 0 0; font-weight: bold;">{{ total_orders }}</p>
+    </div>
+    <div style="background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; min-width: 180px;">
+      <h3 style="margin:0; color: #666; font-size: 13px;">Completed Revenue</h3>
+      <p style="font-size: 28px; margin: 8px 0 0; font-weight: bold;">Rs. {{ total_revenue }}</p>
+    </div>
+    <div style="background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; min-width: 180px;">
+      <h3 style="margin:0; color: #666; font-size: 13px;">Reservations</h3>
+      <p style="font-size: 28px; margin: 8px 0 0; font-weight: bold;">{{ total_reservations }}</p>
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 30px; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 300px;">
+      <h2>Users by Role</h2>
+      <table style="width:100%; border-collapse: collapse;">
+        {% for u in user_counts %}
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">{{ u.role }}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee; text-align:right;">{{ u.count }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+
+      <h2 style="margin-top: 30px;">Orders by Status</h2>
+      <table style="width:100%; border-collapse: collapse;">
+        {% for o in order_counts %}
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">{{ o.status }}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee; text-align:right;">{{ o.count }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+
+      <h2 style="margin-top: 30px;">Reservations by Status</h2>
+      <table style="width:100%; border-collapse: collapse;">
+        {% for r in reservation_counts %}
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">{{ r.status }}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee; text-align:right;">{{ r.count }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+
+    <div style="flex: 2; min-width: 400px;">
+      <h2>Recent Orders</h2>
+      <table style="width:100%; border-collapse: collapse;">
+        <tr style="text-align:left; color:#666; font-size:12px;">
+          <th style="padding:8px; border-bottom: 2px solid #ddd;">ID</th>
+          <th style="padding:8px; border-bottom: 2px solid #ddd;">Customer</th>
+          <th style="padding:8px; border-bottom: 2px solid #ddd;">Restaurant</th>
+          <th style="padding:8px; border-bottom: 2px solid #ddd;">Status</th>
+          <th style="padding:8px; border-bottom: 2px solid #ddd;">Total</th>
+        </tr>
+        {% for order in recent_orders %}
+        <tr>
+          <td style="padding:8px; border-bottom: 1px solid #eee;">#{{ order.id }}</td>
+          <td style="padding:8px; border-bottom: 1px solid #eee;">{{ order.customer.username }}</td>
+          <td style="padding:8px; border-bottom: 1px solid #eee;">{{ order.restaurant.name }}</td>
+          <td style="padding:8px; border-bottom: 1px solid #eee;">{{ order.status }}</td>
+          <td style="padding:8px; border-bottom: 1px solid #eee;">Rs. {{ order.total_amount }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+
+      <h2 style="margin-top: 30px;">Recent Reservations</h2>
+      <table style="width:100%; border-collapse: collapse;">
+        <tr style="text-align:left; color:#666; font-size:12px;">
+          <th style="padding:8px; border-bottom: 2px solid #ddd;">ID</th>
+          <th style="padding:8px; border-bottom: 2px solid #ddd;">Customer</th>
+          <th style="padding:8px; border-bottom: 2px solid #ddd;">Restaurant</th>
+          <th style="padding:8px; border-bottom: 2px solid #ddd;">Date</th>
+          <th style="padding:8px; border-bottom: 2px solid #ddd;">Status</th>
+        </tr>
+        {% for res in recent_reservations %}
+        <tr>
+          <td style="padding:8px; border-bottom: 1px solid #eee;">#{{ res.id }}</td>
+          <td style="padding:8px; border-bottom: 1px solid #eee;">{{ res.customer.username }}</td>
+          <td style="padding:8px; border-bottom: 1px solid #eee;">{{ res.restaurant.name }}</td>
+          <td style="padding:8px; border-bottom: 1px solid #eee;">{{ res.reservation_date }}</td>
+          <td style="padding:8px; border-bottom: 1px solid #eee;">{{ res.status }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

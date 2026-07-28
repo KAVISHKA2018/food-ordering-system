@@ -1,0 +1,210 @@
+import { useState, useEffect } from 'react';
+import Layout from '../components/Layout';
+import orderService from '../services/orderService';
+
+const STATUS_FLOW = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY', 'COMPLETED'];
+
+const STATUS_COLORS = {
+  PENDING: '#FF9800',
+  CONFIRMED: '#2196F3',
+  PREPARING: '#9C27B0',
+  READY: '#009688',
+  OUT_FOR_DELIVERY: '#3F51B5',
+  COMPLETED: '#4CAF50',
+  CANCELLED: '#E53935',
+};
+
+function statusLabel(status) {
+  return status.replace(/_/g, ' ').replace(/\w\S*/g, (w) => w[0] + w.slice(1).toLowerCase());
+}
+
+function nextStatus(current) {
+  const idx = STATUS_FLOW.indexOf(current);
+  if (idx === -1 || idx === STATUS_FLOW.length - 1) return null;
+  return STATUS_FLOW[idx + 1];
+}
+
+export default function OrdersPage() {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [filter, setFilter] = useState('ALL');
+  const [updatingId, setUpdatingId] = useState(null);
+
+  useEffect(() => {
+    loadOrders();
+    // Poll every 15s so new incoming orders show up without manual refresh
+    const interval = setInterval(loadOrders, 15000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadOrders = async () => {
+    try {
+      const data = await orderService.getOrders();
+      setOrders(data);
+      setError('');
+    } catch (err) {
+      setError('Failed to load orders.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdvance = async (order) => {
+    const next = nextStatus(order.status);
+    if (!next) return;
+    setUpdatingId(order.id);
+    try {
+      await orderService.updateStatus(order.id, next);
+      loadOrders();
+    } catch (err) {
+      setError('Failed to update order status.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleCancel = async (order) => {
+    if (!confirm(`Cancel order #${order.id}?`)) return;
+    setUpdatingId(order.id);
+    try {
+      await orderService.updateStatus(order.id, 'CANCELLED');
+      loadOrders();
+    } catch (err) {
+      setError('Failed to cancel order.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const filteredOrders = orders
+    .filter((o) => filter === 'ALL' || o.status === filter)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  if (loading) return <Layout><div style={styles.page}>Loading...</div></Layout>;
+
+  return (
+    <Layout>
+      <div style={styles.page}>
+        <h1>Orders</h1>
+        {error && <div style={styles.error}>{error}</div>}
+
+        <div style={styles.filters}>
+          {['ALL', ...STATUS_FLOW, 'CANCELLED'].map((s) => (
+            <button
+              key={s}
+              onClick={() => setFilter(s)}
+              style={{
+                ...styles.filterBtn,
+                backgroundColor: filter === s ? '#E8865A' : '#fff',
+                color: filter === s ? '#fff' : '#2B2B2B',
+              }}
+            >
+              {s === 'ALL' ? 'All' : statusLabel(s)}
+            </button>
+          ))}
+        </div>
+
+        {filteredOrders.length === 0 ? (
+          <p style={{ color: '#8E8E8E' }}>No orders in this category.</p>
+        ) : (
+          <div style={styles.grid}>
+            {filteredOrders.map((order) => {
+              const next = nextStatus(order.status);
+              const isFinal = order.status === 'COMPLETED' || order.status === 'CANCELLED';
+              return (
+                <div key={order.id} style={styles.card}>
+                  <div style={styles.cardHeader}>
+                    <strong>Order #{order.id}</strong>
+                    <span
+                      style={{
+                        ...styles.badge,
+                        backgroundColor: `${STATUS_COLORS[order.status]}22`,
+                        color: STATUS_COLORS[order.status],
+                      }}
+                    >
+                      {statusLabel(order.status)}
+                    </span>
+                  </div>
+                  <p style={styles.meta}>
+                    {order.customer_username} · {statusLabel(order.order_type)} ·{' '}
+                    {new Date(order.created_at).toLocaleString()}
+                  </p>
+
+                  <div style={styles.itemsList}>
+                    {order.items.map((item) => (
+                      <div key={item.id} style={styles.itemRow}>
+                        <span>{item.quantity}x {item.item_name}</span>
+                        <span>Rs. {parseFloat(item.subtotal).toFixed(0)}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {order.delivery_address && (
+                    <p style={styles.smallNote}>📍 {order.delivery_address}</p>
+                  )}
+                  {order.notes && <p style={styles.smallNote}>📝 {order.notes}</p>}
+
+                  <div style={styles.totalRow}>
+                    <strong>Total</strong>
+                    <strong>Rs. {parseFloat(order.total_amount).toFixed(0)}</strong>
+                  </div>
+
+                  {!isFinal && (
+                    <div style={styles.actions}>
+                      {next && (
+                        <button
+                          style={styles.primaryBtn}
+                          disabled={updatingId === order.id}
+                          onClick={() => handleAdvance(order)}
+                        >
+                          {updatingId === order.id ? 'Updating...' : `Mark as ${statusLabel(next)}`}
+                        </button>
+                      )}
+                      <button
+                        style={styles.cancelBtn}
+                        disabled={updatingId === order.id}
+                        onClick={() => handleCancel(order)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </Layout>
+  );
+}
+
+const styles = {
+  page: { padding: '32px', maxWidth: '1100px' },
+  error: { backgroundColor: '#FFEBEE', color: '#C62828', padding: '10px', borderRadius: '8px', marginBottom: '16px' },
+  filters: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '24px' },
+  filterBtn: {
+    padding: '8px 14px', border: '1px solid #ddd', borderRadius: '20px', cursor: 'pointer', fontSize: '13px',
+  },
+  grid: {
+    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px',
+  },
+  card: { backgroundColor: '#fff', borderRadius: '12px', padding: '18px' },
+  cardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' },
+  badge: { padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700 },
+  meta: { fontSize: '12px', color: '#8E8E8E', marginBottom: '12px' },
+  itemsList: { borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', padding: '10px 0', marginBottom: '10px' },
+  itemRow: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' },
+  smallNote: { fontSize: '12px', color: '#8E8E8E', margin: '4px 0' },
+  totalRow: { display: 'flex', justifyContent: 'space-between', fontSize: '14px', margin: '10px 0' },
+  actions: { display: 'flex', gap: '8px', marginTop: '12px' },
+  primaryBtn: {
+    flex: 1, padding: '10px', backgroundColor: '#E8865A', color: '#fff', border: 'none',
+    borderRadius: '8px', cursor: 'pointer', fontSize: '13px',
+  },
+  cancelBtn: {
+    padding: '10px 14px', backgroundColor: '#fff', color: '#E53935', border: '1px solid #E53935',
+    borderRadius: '8px', cursor: 'pointer', fontSize: '13px',
+  },
+};

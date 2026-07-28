@@ -11,17 +11,20 @@ class IsOwnerOrReadOnly(permissions.BasePermission):
         return obj.owner == request.user
 
 
-class IsRestaurantAdmin(permissions.BasePermission):
+class CanCreateRestaurant(permissions.BasePermission):
     """
-    Only users with role RESTAURANT_ADMIN can create restaurants/menu items.
+    Only System Admins (or Django superusers) can create new restaurants.
+    Restaurant Admins can no longer self-register a restaurant — a System
+    Admin sets them up (typically via Django admin) and assigns ownership.
     """
     def has_permission(self, request, view):
         if request.method in permissions.SAFE_METHODS:
             return True
-        return (
-            request.user.is_authenticated and
-            request.user.role == 'RESTAURANT_ADMIN'
-        )
+        if view.action == 'create':
+            return request.user.is_authenticated and (
+                request.user.role == 'SYSTEM_ADMIN' or request.user.is_superuser
+            )
+        return True
 
 
 class IsRestaurantOwnerOfItem(permissions.BasePermission):
@@ -32,5 +35,4 @@ class IsRestaurantOwnerOfItem(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         if request.method in permissions.SAFE_METHODS:
             return True
-        # obj is a Category or MenuItem — both have .restaurant
         return obj.restaurant.owner == request.user
