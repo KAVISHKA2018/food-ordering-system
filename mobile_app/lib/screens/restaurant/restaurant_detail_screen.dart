@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../../config/api_config.dart';
 import '../../config/app_theme.dart';
 import '../../models/restaurant_model.dart';
+import '../../models/menu_item_model.dart';
 import '../../services/restaurant_service.dart';
 import '../../providers/cart_provider.dart';
 import '../cart/cart_screen.dart';
@@ -24,6 +27,91 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     _restaurantFuture = RestaurantService.getRestaurantDetail(widget.restaurantId);
   }
 
+  void _openVariantPicker(MenuItemModel item, RestaurantModel restaurant, CartProvider cart) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Consumer<CartProvider>(
+          builder: (context, cartValue, _) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(item.name,
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    const Text('Choose a size',
+                        style: TextStyle(color: AppColors.textGrey, fontSize: 13)),
+                    const SizedBox(height: 16),
+                    ...item.variants.map((variant) {
+                      final qty = cartValue.quantityFor(item, variant);
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(variant.name,
+                                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                                  Text('Rs. ${variant.price.toStringAsFixed(0)}',
+                                      style: const TextStyle(color: AppColors.textGrey, fontSize: 13)),
+                                ],
+                              ),
+                            ),
+                            if (qty == 0)
+                              OutlinedButton(
+                                onPressed: () => cartValue.addItem(
+                                  item,
+                                  restaurant.id,
+                                  restaurant.name,
+                                  variant: variant,
+                                ),
+                                child: const Text('Add'),
+                              )
+                            else
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.remove_circle, color: AppColors.primary),
+                                    onPressed: () => cartValue.decrement(item, variant),
+                                  ),
+                                  Text('$qty', style: const TextStyle(fontSize: 16)),
+                                  IconButton(
+                                    icon: const Icon(Icons.add_circle, color: AppColors.primary),
+                                    onPressed: () => cartValue.increment(item, variant),
+                                  ),
+                                ],
+                              ),
+                          ],
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Done'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cart = Provider.of<CartProvider>(context);
@@ -39,15 +127,40 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
             return Center(child: Text('Error: ${snapshot.error}'));
           }
           final restaurant = snapshot.data!;
+          final coverUrl = ApiConfig.imageUrl(restaurant.coverImage);
+          final logoUrl = ApiConfig.imageUrl(restaurant.logo);
+
           return CustomScrollView(
             slivers: [
               SliverAppBar(
                 pinned: true,
-                expandedHeight: 160,
+                expandedHeight: 200,
                 backgroundColor: AppColors.primary,
                 flexibleSpace: FlexibleSpaceBar(
-                  title: Text(restaurant.name),
-                  background: Container(color: AppColors.primary),
+                  background: coverUrl.isNotEmpty
+                      ? Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            CachedNetworkImage(
+                              imageUrl: coverUrl,
+                              fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) => Container(color: AppColors.primary),
+                            ),
+                            Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    Colors.black.withValues(alpha: 0.55),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : Container(color: AppColors.primary),
                 ),
                 actions: [
                   IconButton(
@@ -66,7 +179,46 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
               ),
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: logoUrl.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: logoUrl,
+                                width: 64,
+                                height: 64,
+                                fit: BoxFit.cover,
+                                errorWidget: (_, __, ___) => Container(
+                                  width: 64,
+                                  height: 64,
+                                  color: AppColors.primary.withValues(alpha: 0.15),
+                                  child: const Icon(Icons.restaurant, color: AppColors.primary),
+                                ),
+                              )
+                            : Container(
+                                width: 64,
+                                height: 64,
+                                color: AppColors.primary.withValues(alpha: 0.15),
+                                child: const Icon(Icons.restaurant, color: AppColors.primary),
+                              ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Text(
+                          restaurant.name,
+                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -108,12 +260,49 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {
                             final item = category.menuItems[index];
-                            final inCart = cart.items[item.id];
+                            final itemImageUrl = ApiConfig.imageUrl(item.image);
+
+                            // For items without variants, keep the simple inline stepper.
+                            final inCart = !item.hasVariants ? cart.items['${item.id}'] : null;
+
+                            // For items with variants, sum quantities across all their variant lines.
+                            final totalVariantQty = item.hasVariants
+                                ? item.variants.fold<int>(
+                                    0, (sum, v) => sum + cart.quantityFor(item, v))
+                                : 0;
 
                             return ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-                                child: const Icon(Icons.fastfood, color: AppColors.primary),
+                              onTap: item.hasVariants
+                                  ? () => _openVariantPicker(item, restaurant, cart)
+                                  : null,
+                              leading: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: itemImageUrl.isNotEmpty
+                                    ? CachedNetworkImage(
+                                        imageUrl: itemImageUrl,
+                                        width: 50,
+                                        height: 50,
+                                        fit: BoxFit.cover,
+                                        placeholder: (_, __) => Container(
+                                          width: 50,
+                                          height: 50,
+                                          color: AppColors.primary.withValues(alpha: 0.1),
+                                        ),
+                                        errorWidget: (_, __, ___) => Container(
+                                          width: 50,
+                                          height: 50,
+                                          color: AppColors.primary.withValues(alpha: 0.15),
+                                          child: const Icon(Icons.fastfood,
+                                              color: AppColors.primary, size: 20),
+                                        ),
+                                      )
+                                    : Container(
+                                        width: 50,
+                                        height: 50,
+                                        color: AppColors.primary.withValues(alpha: 0.15),
+                                        child: const Icon(Icons.fastfood,
+                                            color: AppColors.primary, size: 20),
+                                      ),
                               ),
                               title: Text(item.name),
                               subtitle: Text(
@@ -122,17 +311,35 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               trailing: SizedBox(
-                                width: 110,
+                                width: 120,
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
-                                    Text('Rs. ${item.price.toStringAsFixed(0)}',
-                                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    if (item.hasVariants)
+                                      Text(
+                                        'From Rs. ${item.variants.map((v) => v.price).reduce((a, b) => a < b ? a : b).toStringAsFixed(0)}',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                      )
+                                    else
+                                      Text('Rs. ${item.price.toStringAsFixed(0)}',
+                                          style: const TextStyle(fontWeight: FontWeight.bold)),
                                     const SizedBox(height: 4),
                                     if (!item.isAvailable)
                                       const Text('Unavailable',
                                           style: TextStyle(color: Colors.red, fontSize: 11))
+                                    else if (item.hasVariants)
+                                      OutlinedButton(
+                                        style: OutlinedButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                                          minimumSize: const Size(0, 32),
+                                        ),
+                                        onPressed: () => _openVariantPicker(item, restaurant, cart),
+                                        child: Text(
+                                          totalVariantQty > 0 ? 'In cart ($totalVariantQty)' : 'Select size',
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      )
                                     else if (inCart == null)
                                       SizedBox(
                                         height: 32,
@@ -157,7 +364,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                             constraints: const BoxConstraints(),
                                             icon: const Icon(Icons.remove_circle,
                                                 color: AppColors.primary, size: 22),
-                                            onPressed: () => cart.decrement(item.id),
+                                            onPressed: () => cart.decrement(item, null),
                                           ),
                                           Padding(
                                             padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -168,11 +375,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                             constraints: const BoxConstraints(),
                                             icon: const Icon(Icons.add_circle,
                                                 color: AppColors.primary, size: 22),
-                                            onPressed: () => cart.addItem(
-                                              item,
-                                              restaurant.id,
-                                              restaurant.name,
-                                            ),
+                                            onPressed: () => cart.increment(item, null),
                                           ),
                                         ],
                                       ),

@@ -1,3 +1,6 @@
+import qrcode
+from io import BytesIO
+from django.http import HttpResponse
 from rest_framework import viewsets, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -7,6 +10,29 @@ from .serializers import (
     CategorySerializer, MenuItemSerializer
 )
 from .permissions import IsOwnerOrReadOnly, CanCreateRestaurant, IsRestaurantOwnerOfItem
+
+from .models import Restaurant, Category, MenuItem, MenuItemVariant
+from .serializers import (
+    RestaurantSerializer, RestaurantDetailSerializer,
+    CategorySerializer, MenuItemSerializer, MenuItemVariantSerializer
+)
+from .permissions import (
+    IsOwnerOrReadOnly, CanCreateRestaurant,
+    IsRestaurantOwnerOfItem, IsRestaurantOwnerOfVariant
+)
+
+
+class MenuItemVariantViewSet(viewsets.ModelViewSet):
+    queryset = MenuItemVariant.objects.all()
+    serializer_class = MenuItemVariantSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsRestaurantOwnerOfVariant]
+
+    def get_queryset(self):
+        queryset = MenuItemVariant.objects.all()
+        menu_item_id = self.request.query_params.get('menu_item')
+        if menu_item_id:
+            queryset = queryset.filter(menu_item_id=menu_item_id)
+        return queryset
 
 
 class RestaurantViewSet(viewsets.ModelViewSet):
@@ -23,6 +49,29 @@ class RestaurantViewSet(viewsets.ModelViewSet):
         restaurants = Restaurant.objects.filter(owner=request.user)
         serializer = RestaurantDetailSerializer(restaurants, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['get'], url_path='qr-code', permission_classes=[permissions.IsAuthenticated])
+    def qr_code(self, request, pk=None):
+        """Returns a PNG QR code encoding this restaurant's ID.
+        Customers scan it to jump straight into dine-in ordering for this restaurant."""
+        restaurant = self.get_object()
+
+        if restaurant.owner != request.user and not request.user.is_staff:
+            return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
+
+        qr_content = f"foodorder://restaurant/{restaurant.id}"
+        qr = qrcode.QRCode(version=1, box_size=10, border=4)
+        qr.add_data(qr_content)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+
+        buffer = BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+
+        response = HttpResponse(buffer.getvalue(), content_type="image/png")
+        response['Content-Disposition'] = f'inline; filename="restaurant_{restaurant.id}_qr.png"'
+        return response
 
 
 class CategoryViewSet(viewsets.ModelViewSet):

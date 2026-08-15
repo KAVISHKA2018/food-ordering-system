@@ -27,6 +27,8 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
 
   Color _statusColor(String status) {
     switch (status) {
+      case 'AWAITING_PAYMENT':
+        return Colors.redAccent;
       case 'PENDING':
         return Colors.orange;
       case 'CONFIRMED':

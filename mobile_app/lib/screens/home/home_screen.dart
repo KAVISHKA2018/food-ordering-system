@@ -6,7 +6,10 @@ import '../../models/restaurant_model.dart';
 import '../../services/restaurant_service.dart';
 import '../restaurant/restaurant_detail_screen.dart';
 import '../orders/order_history_screen.dart';
+import '../orders/my_table_screen.dart';
+import '../reservations/reservation_history_screen.dart';
 import '../profile/profile_screen.dart';
+import '../scan/qr_scanner_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -30,13 +33,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  String _imageUrl(String? path) {
-    if (path == null || path.isEmpty) return '';
-    if (path.startsWith('http')) return path;
-    final base = ApiConfig.baseUrl.replaceAll('/api', '');
-    return '$base$path';
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -47,6 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
             slivers: [
               SliverToBoxAdapter(child: _buildHeader()),
               SliverToBoxAdapter(child: _buildSearchBar()),
+              SliverToBoxAdapter(child: _buildScanBanner()),
               SliverToBoxAdapter(child: _buildSectionTitle('Restaurants')),
               _buildRestaurantList(),
             ],
@@ -56,7 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
- Widget _buildHeader() {
+  Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
       child: Row(
@@ -74,15 +71,32 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          IconButton(
+          PopupMenuButton<String>(
             icon: const Icon(Icons.receipt_long, color: AppColors.textDark),
-            tooltip: 'My Orders',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const OrderHistoryScreen()),
-              );
+            tooltip: 'History',
+            onSelected: (value) {
+              if (value == 'orders') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const OrderHistoryScreen()),
+                );
+              } else if (value == 'reservations') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ReservationHistoryScreen()),
+                );
+              } else if (value == 'my_table') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MyTableScreen()),
+                );
+              }
             },
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'my_table', child: Text('My Table')),
+              const PopupMenuItem(value: 'orders', child: Text('My Orders')),
+              const PopupMenuItem(value: 'reservations', child: Text('My Reservations')),
+            ],
           ),
           IconButton(
             icon: const Icon(Icons.person, color: AppColors.textDark),
@@ -113,6 +127,45 @@ class _HomeScreenState extends State<HomeScreen> {
             border: InputBorder.none,
             hintText: 'Search restaurants or food',
             prefixIcon: Icon(Icons.search, color: AppColors.textGrey),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScanBanner() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const QRScannerScreen()),
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.primary,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.qr_code_scanner, color: Colors.white, size: 28),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Dining in?',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                    Text('Scan the table QR code to order',
+                        style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.white),
+            ],
           ),
         ),
       ),
@@ -162,6 +215,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _restaurantCard(RestaurantModel restaurant) {
+    final logoUrl = ApiConfig.imageUrl(restaurant.logo);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: GestureDetector(
@@ -174,32 +229,42 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         },
         child: Container(
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: AppColors.cardBackground,
             borderRadius: BorderRadius.circular(16),
           ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              AspectRatio(
-                aspectRatio: 16 / 9,
-                child: restaurant.coverImage != null && restaurant.coverImage!.isNotEmpty
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: logoUrl.isNotEmpty
                     ? CachedNetworkImage(
-                        imageUrl: _imageUrl(restaurant.coverImage),
+                        imageUrl: logoUrl,
+                        width: 60,
+                        height: 60,
                         fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(
+                          width: 60,
+                          height: 60,
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                        ),
                         errorWidget: (_, __, ___) => Container(
+                          width: 60,
+                          height: 60,
                           color: AppColors.primary.withValues(alpha: 0.15),
-                          child: const Icon(Icons.restaurant, size: 40, color: AppColors.primary),
+                          child: const Icon(Icons.restaurant, color: AppColors.primary),
                         ),
                       )
                     : Container(
+                        width: 60,
+                        height: 60,
                         color: AppColors.primary.withValues(alpha: 0.15),
-                        child: const Icon(Icons.restaurant, size: 40, color: AppColors.primary),
+                        child: const Icon(Icons.restaurant, color: AppColors.primary),
                       ),
               ),
-              Padding(
-                padding: const EdgeInsets.all(12),
+              const SizedBox(width: 14),
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -215,6 +280,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
+              const Icon(Icons.chevron_right, color: AppColors.textGrey),
             ],
           ),
         ),

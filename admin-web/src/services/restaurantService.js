@@ -12,6 +12,11 @@ export const restaurantService = {
     return response.data;
   },
 
+  async updateRestaurantImages(id, formData) {
+    const response = await multipartClient.patch(`${API_CONFIG.restaurants}${id}/`, formData);
+    return response.data;
+  },
+
   async createCategory(data) {
     const response = await apiClient.post(API_CONFIG.categories, data);
     return response.data;
@@ -38,6 +43,27 @@ export const restaurantService = {
 
   async deleteMenuItem(id) {
     await apiClient.delete(`${API_CONFIG.menuItems}${id}/`);
+  },
+
+  async createVariant(data) {
+    const response = await apiClient.post(API_CONFIG.menuItemVariants, data);
+    return response.data;
+  },
+
+  async updateVariant(id, data) {
+    const response = await apiClient.patch(`${API_CONFIG.menuItemVariants}${id}/`, data);
+    return response.data;
+  },
+
+  async deleteVariant(id) {
+    await apiClient.delete(`${API_CONFIG.menuItemVariants}${id}/`);
+  },
+
+  async getQRCode(id) {
+    const response = await apiClient.get(`${API_CONFIG.restaurants}${id}/qr-code/`, {
+      responseType: 'blob',
+    });
+    return URL.createObjectURL(response.data);
   },
 };
 

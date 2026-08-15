@@ -1,14 +1,23 @@
 from rest_framework import serializers
-from .models import Restaurant, Category, MenuItem
+from .models import Restaurant, Category, MenuItem, MenuItemVariant
+
+
+class MenuItemVariantSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MenuItemVariant
+        fields = ['id', 'menu_item', 'name', 'price', 'display_order']
+        read_only_fields = ['id']
 
 
 class MenuItemSerializer(serializers.ModelSerializer):
+    variants = MenuItemVariantSerializer(many=True, read_only=True)
+
     class Meta:
         model = MenuItem
         fields = [
             'id', 'restaurant', 'category', 'name', 'description',
             'price', 'image', 'is_available', 'is_vegetarian',
-            'stock_quantity', 'created_at', 'updated_at'
+            'stock_quantity', 'variants', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -35,8 +44,12 @@ class RestaurantSerializer(serializers.ModelSerializer):
 
 
 class RestaurantDetailSerializer(RestaurantSerializer):
-    """Includes nested categories + menu items — used for the restaurant detail/menu page."""
     categories = CategorySerializer(many=True, read_only=True)
+    uncategorized_items = serializers.SerializerMethodField()
 
     class Meta(RestaurantSerializer.Meta):
-        fields = RestaurantSerializer.Meta.fields + ['categories']
+        fields = RestaurantSerializer.Meta.fields + ['categories', 'uncategorized_items']
+
+    def get_uncategorized_items(self, obj):
+        items = obj.menu_items.filter(category__isnull=True)
+        return MenuItemSerializer(items, many=True).data

@@ -1,8 +1,9 @@
+from django.utils import timezone
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from .models import Order
-from .serializers import OrderSerializer, OrderCreateSerializer
+from .models import Order, TableSession, Payment
+from .serializers import OrderSerializer, OrderCreateSerializer, TableSessionSerializer, PaymentSerializer
 from .permissions import IsOrderOwnerOrRestaurantStaff
 
 
@@ -17,9 +18,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         if user.role == 'RESTAURANT_ADMIN':
-            # restaurant admins see orders placed at restaurants they own
             return Order.objects.filter(restaurant__owner=user)
-        # customers see only their own orders
         return Order.objects.filter(customer=user)
 
     def create(self, request, *args, **kwargs):
@@ -30,7 +29,6 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['patch'], permission_classes=[permissions.IsAuthenticated])
     def update_status(self, request, pk=None):
-        """Restaurant admin updates order status (e.g. CONFIRMED, PREPARING, READY)."""
         order = self.get_object()
         if order.restaurant.owner != request.user:
             return Response(
@@ -45,3 +43,65 @@ class OrderViewSet(viewsets.ModelViewSet):
         order.status = new_status
         order.save()
         return Response(OrderSerializer(order).data)
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def pay(self, request, pk=None):
+        """Mock payment for a single order — used for Takeaway.
+        Moves the order from AWAITING_PAYMENT to PENDING so the kitchen sees it."""
+        order = self.get_object()
+        if order.customer != request.user:
+            return Response({"detail": "Not your order."}, status=status.HTTP_403_FORBIDDEN)
+        if order.status != Order.Status.AWAITING_PAYMENT:
+            return Response(
+                {"detail": "This order is not awaiting payment."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        Payment.objects.create(
+            order=order,
+            amount=order.total_amount,
+            method=Payment.Method.MOCK,
+            status=Payment.Status.COMPLETED,
+            paid_at=timezone.now(),
+        )
+        order.status = Order.Status.PENDING
+        order.save()
+        return Response(OrderSerializer(order).data)
+
+
+class TableSessionViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = TableSessionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'RESTAURANT_ADMIN':
+            return TableSession.objects.filter(restaurant__owner=user)
+        return TableSession.objects.filter(customer=user)
+
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def active(self, request):
+        """The customer's currently open table sessions (their running tabs)."""
+        sessions = TableSession.objects.filter(customer=request.user, status=TableSession.Status.OPEN)
+        return Response(TableSessionSerializer(sessions, many=True).data)
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def pay(self, request, pk=None):
+        """Mock 'Pay Now' for a dine-in table — pays the accumulated total
+        across all orders in this session."""
+        session = self.get_object()
+        if session.customer != request.user:
+            return Response({"detail": "Not your table session."}, status=status.HTTP_403_FORBIDDEN)
+        if session.status != TableSession.Status.OPEN:
+            return Response({"detail": "This table session is not open."}, status=status.HTTP_400_BAD_REQUEST)
+
+        Payment.objects.create(
+            table_session=session,
+            amount=session.total_amount,
+            method=Payment.Method.MOCK,
+            status=Payment.Status.COMPLETED,
+            paid_at=timezone.now(),
+        )
+        session.status = TableSession.Status.PAID
+        session.save()
+        return Response(TableSessionSerializer(session).data)

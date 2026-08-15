@@ -9,17 +9,23 @@ class OrderService {
     required String orderType,
     required List<Map<String, dynamic>> items,
     String deliveryAddress = '',
+    String tableNumber = '',
     String notes = '',
   }) async {
+    final body = {
+      'restaurant': restaurantId,
+      'order_type': orderType,
+      'delivery_address': deliveryAddress,
+      'notes': notes,
+      'items': items,
+    };
+    if (orderType == 'DINE_IN') {
+      body['table_number'] = tableNumber;
+    }
+
     final response = await ApiService.post(
       ApiConfig.orders,
-      {
-        'restaurant': restaurantId,
-        'order_type': orderType,
-        'delivery_address': deliveryAddress,
-        'notes': notes,
-        'items': items,
-      },
+      body,
       auth: true,
     );
 
@@ -30,6 +36,18 @@ class OrderService {
     } else {
       return {'success': false, 'error': data};
     }
+  }
+
+  static Future<Map<String, dynamic>> payOrder(int orderId) async {
+    final response = await ApiService.post(
+      '${ApiConfig.orders}$orderId/pay/',
+      {},
+      auth: true,
+    );
+    if (response.statusCode == 200) {
+      return {'success': true, 'order': OrderModel.fromJson(jsonDecode(response.body))};
+    }
+    return {'success': false, 'error': jsonDecode(response.body)};
   }
 
   static Future<List<OrderModel>> getMyOrders() async {

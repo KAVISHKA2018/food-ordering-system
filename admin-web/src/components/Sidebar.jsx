@@ -2,17 +2,18 @@ import { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import restaurantService from '../services/restaurantService';
+import { imageUrl } from '../config/apiConfig';
 
 export default function Sidebar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [restaurantName, setRestaurantName] = useState('');
+  const [restaurant, setRestaurant] = useState(null);
 
   useEffect(() => {
     restaurantService
       .getMyRestaurant()
-      .then((r) => setRestaurantName(r?.name || ''))
-      .catch(() => setRestaurantName(''));
+      .then((r) => setRestaurant(r))
+      .catch(() => setRestaurant(null));
   }, []);
 
   const handleLogout = () => {
@@ -26,17 +27,23 @@ export default function Sidebar() {
     color: isActive ? '#fff' : '#2B2B2B',
   });
 
+  const logoUrl = restaurant ? imageUrl(restaurant.logo) : null;
+
   return (
     <div style={styles.sidebar}>
       <div>
         <div style={styles.brand}>
-          <span style={styles.brandIcon}>🍽️</span>
+          {logoUrl ? (
+            <img src={logoUrl} alt="logo" style={styles.logoImg} />
+          ) : (
+            <div style={styles.logoPlaceholder}>🍽️</div>
+          )}
           <div>
             <h2 style={styles.restaurantName}>
-              {restaurantName || 'Loading...'}
+              {restaurant?.name || 'Loading...'}
             </h2>
             <p style={styles.username}>
-              {user?.username} · Restaurant Admin
+               Restaurant Admin
             </p>
           </div>
         </div>
@@ -59,7 +66,7 @@ export default function Sidebar() {
 const styles = {
   sidebar: {
     width: '220px',
-    minHeight: '100vh',
+    height: '100%',
     backgroundColor: '#fff',
     borderRight: '1px solid #eee',
     padding: '24px 16px',
@@ -70,13 +77,30 @@ const styles = {
   },
   brand: {
     display: 'flex',
-    alignItems: 'flex-start',
-    gap: '8px',
+    alignItems: 'center',
+    gap: '10px',
     marginBottom: '28px',
   },
-  brandIcon: { fontSize: '22px' },
+  logoImg: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '10px',
+    objectFit: 'cover',
+    flexShrink: 0,
+  },
+  logoPlaceholder: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '10px',
+    backgroundColor: '#FBE0D1',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '18px',
+    flexShrink: 0,
+  },
   restaurantName: {
-    fontSize: '16px',
+    fontSize: '15px',
     margin: 0,
     lineHeight: 1.3,
     wordBreak: 'break-word',

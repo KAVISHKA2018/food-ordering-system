@@ -26,6 +26,8 @@ export default function MenuManagementPage() {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
 
+  const [variantRows, setVariantRows] = useState([]);
+
   useEffect(() => {
     loadRestaurant();
   }, []);
@@ -74,6 +76,7 @@ export default function MenuManagementPage() {
     setNewCategoryInline('');
     setImageFile(null);
     setImagePreview(null);
+    setVariantRows([]);
     setShowItemForm(true);
   };
 
@@ -89,6 +92,15 @@ export default function MenuManagementPage() {
     setNewCategoryInline('');
     setImageFile(null);
     setImagePreview(imageUrl(item.image));
+    setVariantRows(
+      (item.variants || []).map((v) => ({
+        id: v.id,
+        name: v.name,
+        price: v.price,
+        isNew: false,
+        isDeleted: false,
+      }))
+    );
     setShowItemForm(true);
   };
 
@@ -100,6 +112,25 @@ export default function MenuManagementPage() {
     }
   };
 
+  const addVariantRow = () => {
+    setVariantRows([
+      ...variantRows,
+      { id: `temp-${Date.now()}`, name: '', price: '', isNew: true, isDeleted: false },
+    ]);
+  };
+
+  const updateVariantRow = (id, field, value) => {
+    setVariantRows(variantRows.map((v) => (v.id === id ? { ...v, [field]: value } : v)));
+  };
+
+  const removeVariantRow = (id) => {
+    setVariantRows(
+      variantRows
+        .map((v) => (v.id === id ? { ...v, isDeleted: true } : v))
+        .filter((v) => !(v.isNew && v.isDeleted)) // if it was never saved, just drop it entirely
+    );
+  };
+  
   const handleSaveItem = async (e) => {
     e.preventDefault();
 
@@ -131,18 +162,37 @@ export default function MenuManagementPage() {
         formData.append('image', imageFile);
       }
 
+      let savedItem;
       if (editingItem) {
-        await restaurantService.updateMenuItem(editingItem.id, formData);
+        savedItem = await restaurantService.updateMenuItem(editingItem.id, formData);
       } else {
-        await restaurantService.createMenuItem(formData);
+        savedItem = await restaurantService.createMenuItem(formData);
+      }
+
+      // Sync variants: create new ones, update changed ones, delete removed ones
+      for (const v of variantRows) {
+        if (v.isDeleted && !v.isNew) {
+          await restaurantService.deleteVariant(v.id);
+        } else if (v.isNew && !v.isDeleted && v.name.trim() && v.price !== '') {
+          await restaurantService.createVariant({
+            menu_item: savedItem.id,
+            name: v.name.trim(),
+            price: parseFloat(v.price),
+          });
+        } else if (!v.isNew && !v.isDeleted && v.name.trim() && v.price !== '') {
+          await restaurantService.updateVariant(v.id, {
+            name: v.name.trim(),
+            price: parseFloat(v.price),
+          });
+        }
       }
 
       setShowItemForm(false);
       setNewCategoryInline('');
       setImageFile(null);
       setImagePreview(null);
+      setVariantRows([]);
       loadRestaurant();
-
     } catch (err) {
       console.error('Save item error:', err.response?.data || err.message);
       setError(
@@ -251,7 +301,15 @@ export default function MenuManagementPage() {
                         )}
                       </td>
                       <td style={styles.td}>{item.name}</td>
-                      <td style={styles.td}>Rs. {parseFloat(item.price).toFixed(0)}</td>
+                      <td style={styles.td}>
+                        {item.variants?.length > 0 ? (
+                          <span title={item.variants.map((v) => `${v.name}: Rs.${v.price}`).join(', ')}>
+                            {item.variants.length} size{item.variants.length > 1 ? 's' : ''}
+                          </span>
+                        ) : (
+                          `Rs. ${parseFloat(item.price).toFixed(0)}`
+                        )}
+                      </td>
                       <td style={styles.td}>
                         <label style={styles.toggle}>
                           <input
@@ -273,6 +331,57 @@ export default function MenuManagementPage() {
             )}
           </div>
         ))}
+
+        {restaurant.uncategorized_items?.length > 0 && (
+          <div style={styles.categoryCard}>
+            <div style={styles.categoryHeader}>
+              <h3 style={{ margin: 0 }}>Uncategorized</h3>
+              <button style={styles.smallBtn} onClick={() => openNewItemForm('')}>
+                + Add Item
+              </button>
+            </div>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Image</th>
+                  <th style={styles.th}>Name</th>
+                  <th style={styles.th}>Price</th>
+                  <th style={styles.th}>Available</th>
+                  <th style={styles.th}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {restaurant.uncategorized_items.map((item) => (
+                  <tr key={item.id}>
+                    <td style={styles.td}>
+                      {item.image ? (
+                        <img src={imageUrl(item.image)} alt={item.name} style={styles.thumb} />
+                      ) : (
+                        <div style={styles.thumbPlaceholder}>—</div>
+                      )}
+                    </td>
+                    <td style={styles.td}>{item.name}</td>
+                    <td style={styles.td}>Rs. {parseFloat(item.price).toFixed(0)}</td>
+                    <td style={styles.td}>
+                      <label style={styles.toggle}>
+                        <input
+                          type="checkbox"
+                          checked={item.is_available}
+                          onChange={() => toggleAvailability(item)}
+                        />
+                        {item.is_available ? 'Yes' : 'No'}
+                      </label>
+                    </td>
+                    <td style={styles.td}>
+                      <button style={styles.linkBtn} onClick={() => openEditItemForm(item)}>Edit</button>
+                      <button style={styles.linkBtnDanger} onClick={() => handleDeleteItem(item.id)}>Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {showItemForm && (
           <div style={styles.modalOverlay}>
@@ -329,15 +438,62 @@ export default function MenuManagementPage() {
                   />
                 )}
 
-                <label style={styles.label}>Price (Rs.)</label>
+                <label style={styles.label}>
+                  Price (Rs.)
+                  {variantRows.filter((v) => !v.isDeleted).length > 0 && (
+                    <span style={styles.priceDisabledNote}> — not used, sizes below set the price</span>
+                  )}
+                </label>
                 <input
-                  style={styles.input}
+                  style={{
+                    ...styles.input,
+                    ...(variantRows.filter((v) => !v.isDeleted).length > 0 ? styles.inputDisabled : {}),
+                  }}
                   type="number"
                   step="0.01"
                   value={itemForm.price}
                   onChange={(e) => setItemForm({ ...itemForm, price: e.target.value })}
-                  required
+                  disabled={variantRows.filter((v) => !v.isDeleted).length > 0}
+                  required={variantRows.filter((v) => !v.isDeleted).length === 0}
                 />
+
+                <div style={styles.variantsSection}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label style={styles.label}>Sizes / Variants (optional)</label>
+                    <button type="button" style={styles.smallAddBtn} onClick={addVariantRow}>
+                      + Add Size
+                    </button>
+                  </div>
+                  <p style={styles.variantHint}>
+                    e.g. Small / Medium / Large, or Half / Full. If you add sizes, customers
+                    will pick one and its price replaces the base price above.
+                  </p>
+                  {variantRows.filter((v) => !v.isDeleted).map((v) => (
+                    <div key={v.id} style={styles.variantRow}>
+                      <input
+                        style={{ ...styles.input, marginBottom: 0, flex: 2 }}
+                        placeholder="Size name (e.g. Large)"
+                        value={v.name}
+                        onChange={(e) => updateVariantRow(v.id, 'name', e.target.value)}
+                      />
+                      <input
+                        style={{ ...styles.input, marginBottom: 0, flex: 1 }}
+                        type="number"
+                        step="0.01"
+                        placeholder="Price"
+                        value={v.price}
+                        onChange={(e) => updateVariantRow(v.id, 'price', e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        style={styles.variantRemoveBtn}
+                        onClick={() => removeVariantRow(v.id)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
                 <label style={{ ...styles.label, display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <input
                     type="checkbox"
@@ -412,4 +568,18 @@ const styles = {
   modal: {
     backgroundColor: '#fff', padding: '24px', borderRadius: '12px', width: '400px', maxHeight: '90vh', overflowY: 'auto',
   },
+
+  variantsSection: { marginTop: '8px', marginBottom: '10px' },
+  variantHint: { fontSize: '12px', color: '#8E8E8E', margin: '4px 0 10px' },
+  variantRow: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' },
+  variantRemoveBtn: {
+    background: '#fff', border: '1px solid #E53935', color: '#E53935',
+    borderRadius: '6px', width: '32px', height: '38px', cursor: 'pointer', fontSize: '14px',
+  },
+  smallAddBtn: {
+    padding: '4px 10px', backgroundColor: '#fff', color: '#E8865A', border: '1px solid #E8865A',
+    borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
+  },
+  priceDisabledNote: { color: '#8E8E8E', fontWeight: 400, fontSize: '11px' },
+  inputDisabled: { backgroundColor: '#f5f5f5', color: '#aaa', cursor: 'not-allowed' },
 };

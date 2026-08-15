@@ -14,8 +14,10 @@ class CartScreen extends StatefulWidget {
 class _CartScreenState extends State<CartScreen> {
   String _orderType = 'TAKEAWAY';
   final _addressController = TextEditingController();
+  final _tableNumberController = TextEditingController();
   final _notesController = TextEditingController();
   bool _placing = false;
+  bool _initializedFromCart = false;
 
   final _orderTypes = const {
     'DINE_IN': 'Dine In',
@@ -26,6 +28,7 @@ class _CartScreenState extends State<CartScreen> {
   @override
   void dispose() {
     _addressController.dispose();
+    _tableNumberController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -37,12 +40,19 @@ class _CartScreenState extends State<CartScreen> {
       );
       return;
     }
+    if (_orderType == 'DINE_IN' && _tableNumberController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter your table number')),
+      );
+      return;
+    }
 
     setState(() => _placing = true);
 
     final items = cart.items.values
         .map((cartItem) => {
               'menu_item': cartItem.menuItem.id,
+              if (cartItem.variant != null) 'variant': cartItem.variant!.id,
               'quantity': cartItem.quantity,
             })
         .toList();
@@ -52,31 +62,14 @@ class _CartScreenState extends State<CartScreen> {
       orderType: _orderType,
       items: items,
       deliveryAddress: _addressController.text.trim(),
+      tableNumber: _tableNumberController.text.trim(),
       notes: _notesController.text.trim(),
     );
 
     setState(() => _placing = false);
 
-    if (result['success'] && mounted) {
-      cart.clear();
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          title: const Text('Order Placed!'),
-          content: Text(
-              'Your order #${result['order'].id} has been placed successfully.'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).popUntil((route) => route.isFirst);
-              },
-              child: const Text('OK'),
-            ),
-          ],
-        ),
-      );
-    } else if (mounted) {
+    if (!result['success']) {
+      if (!mounted) return;
       final error = result['error'];
       String message = 'Failed to place order';
       if (error is Map) {
@@ -84,15 +77,104 @@ class _CartScreenState extends State<CartScreen> {
       } else if (error is List) {
         message = error.first.toString();
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      return;
     }
+
+    final order = result['order'];
+    cart.clear();
+
+    if (!mounted) return;
+
+    if (order.status == 'AWAITING_PAYMENT') {
+      // Takeaway: payment is required before the order goes to the kitchen.
+      _showTakeawayPaymentDialog(order);
+    } else {
+      // Dine-in (Pay Later by default) or Delivery — order already sent to kitchen.
+      _showSuccessDialog(order, paid: false);
+    }
+  }
+
+  Future<void> _showTakeawayPaymentDialog(dynamic order) async {
+    bool paying = false;
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Payment Required'),
+              content: Text(
+                'Your takeaway order total is Rs. ${order.totalAmount.toStringAsFixed(0)}.\n\n'
+                'Please complete payment to send this order to the kitchen.',
+              ),
+              actions: [
+                paying
+                    ? const Padding(
+                        padding: EdgeInsets.all(8.0),
+                        child: CircularProgressIndicator(),
+                      )
+                    : ElevatedButton(
+                        onPressed: () async {
+                          setDialogState(() => paying = true);
+                          final payResult = await OrderService.payOrder(order.id);
+                          if (!mounted) return;
+                          Navigator.pop(dialogContext);
+                          if (payResult['success']) {
+                            _showSuccessDialog(payResult['order'], paid: true);
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Payment failed. Please try again from My Orders.')),
+                            );
+                          }
+                        },
+                        child: Text('Pay Now (Rs. ${order.totalAmount.toStringAsFixed(0)})'),
+                      ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showSuccessDialog(dynamic order, {required bool paid}) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Order Placed!'),
+        content: Text(
+          order.orderType == 'DINE_IN'
+              ? 'Your order #${order.id} has been sent to the kitchen. It has been added to your table\'s bill — pay anytime from "My Table".'
+              : paid
+                  ? 'Payment received. Your order #${order.id} has been sent to the kitchen.'
+                  : 'Your order #${order.id} has been placed successfully.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).popUntil((route) => route.isFirst);
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final cart = Provider.of<CartProvider>(context);
+
+    if (!_initializedFromCart) {
+      if (cart.pendingTableNumber != null) {
+        _orderType = 'DINE_IN';
+        _tableNumberController.text = cart.pendingTableNumber!;
+      }
+      _initializedFromCart = true;
+    }
 
     return Scaffold(
       appBar: AppBar(title: Text(cart.restaurantName ?? 'Your Cart')),
@@ -101,27 +183,32 @@ class _CartScreenState extends State<CartScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                ...cart.items.values.map((cartItem) => Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        title: Text(cartItem.menuItem.name),
-                        subtitle: Text('Rs. ${cartItem.menuItem.price.toStringAsFixed(0)} x ${cartItem.quantity}'),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.remove_circle_outline),
-                              onPressed: () => cart.decrement(cartItem.menuItem.id),
-                            ),
-                            Text('${cartItem.quantity}'),
-                            IconButton(
-                              icon: const Icon(Icons.add_circle_outline),
-                              onPressed: () => cart.increment(cartItem.menuItem.id),
-                            ),
-                          ],
-                        ),
+                ...cart.items.entries.map((entry) {
+                  final key = entry.key;
+                  final cartItem = entry.value;
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      title: Text(cartItem.displayName),
+                      subtitle: Text(
+                          'Rs. ${cartItem.unitPrice.toStringAsFixed(0)} x ${cartItem.quantity}'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.remove_circle_outline),
+                            onPressed: () => cart.decrementByKey(key),
+                          ),
+                          Text('${cartItem.quantity}'),
+                          IconButton(
+                            icon: const Icon(Icons.add_circle_outline),
+                            onPressed: () => cart.incrementByKey(key),
+                          ),
+                        ],
                       ),
-                    )),
+                    ),
+                  );
+                }),
                 const Divider(height: 32),
                 const Text('Order Type', style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
@@ -139,6 +226,23 @@ class _CartScreenState extends State<CartScreen> {
                     );
                   }).toList(),
                 ),
+                if (_orderType == 'DINE_IN') ...[
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _tableNumberController,
+                    decoration: const InputDecoration(
+                      labelText: 'Table Number',
+                      hintText: 'e.g. 05',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.table_bar),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'This order will be added to your table\'s bill. You can pay now or later from "My Table".',
+                    style: TextStyle(color: AppColors.textGrey, fontSize: 12),
+                  ),
+                ],
                 if (_orderType == 'DELIVERY') ...[
                   const SizedBox(height: 16),
                   TextField(
@@ -147,6 +251,13 @@ class _CartScreenState extends State<CartScreen> {
                       labelText: 'Delivery Address',
                       border: OutlineInputBorder(),
                     ),
+                  ),
+                ],
+                if (_orderType == 'TAKEAWAY') ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Payment is required immediately after placing a takeaway order.',
+                    style: TextStyle(color: AppColors.textGrey, fontSize: 12),
                   ),
                 ],
                 const SizedBox(height: 16),
@@ -176,7 +287,10 @@ class _CartScreenState extends State<CartScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           minimumSize: const Size(double.infinity, 0),
                         ),
-                        child: const Text('Place Order', style: TextStyle(fontSize: 16)),
+                        child: Text(
+                          _orderType == 'TAKEAWAY' ? 'Place Order & Pay' : 'Place Order',
+                          style: const TextStyle(fontSize: 16),
+                        ),
                       ),
               ],
             ),

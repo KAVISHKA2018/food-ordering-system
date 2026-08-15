@@ -9,8 +9,16 @@ export const API_CONFIG = {
   myRestaurant: `${BASE_URL}/restaurants/mine/`,
   categories: `${BASE_URL}/categories/`,
   menuItems: `${BASE_URL}/menu-items/`,
+  menuItemVariants: `${BASE_URL}/menu-item-variants/`,
   orders: `${BASE_URL}/orders/`,
   reservations: `${BASE_URL}/reservations/`,
 };
+
+export function imageUrl(path) {
+  if (!path) return null;
+  if (path.startsWith('http')) return path;
+  const base = API_CONFIG.baseURL.replace('/api', '');
+  return `${base}${path}`;
+}
 
 export default API_CONFIG;

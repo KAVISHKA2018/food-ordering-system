@@ -3,19 +3,27 @@ import '../models/menu_item_model.dart';
 
 class CartItem {
   final MenuItemModel menuItem;
+  final MenuItemVariantModel? variant;
   int quantity;
 
-  CartItem({required this.menuItem, this.quantity = 1});
+  CartItem({required this.menuItem, this.variant, this.quantity = 1});
 
-  double get subtotal => menuItem.price * quantity;
+  double get unitPrice => variant?.price ?? menuItem.price;
+  double get subtotal => unitPrice * quantity;
+  String get displayName =>
+      variant != null ? '${menuItem.name} (${variant!.name})' : menuItem.name;
 }
 
 class CartProvider extends ChangeNotifier {
-  final Map<int, CartItem> _items = {};
+  final Map<String, CartItem> _items = {};
   int? _restaurantId;
   String? _restaurantName;
 
-  Map<int, CartItem> get items => _items;
+  // Set when the customer scans a table QR code — carries the table number
+  // through to the Cart/Checkout screen so it defaults to Dine In.
+  String? pendingTableNumber;
+
+  Map<String, CartItem> get items => _items;
   int? get restaurantId => _restaurantId;
   String? get restaurantName => _restaurantName;
 
@@ -26,35 +34,66 @@ class CartProvider extends ChangeNotifier {
 
   bool get isEmpty => _items.isEmpty;
 
-  void addItem(MenuItemModel menuItem, int restaurantId, String restaurantName) {
-    // Enforce single-restaurant cart — matches how checkout/order creation works (one order = one restaurant)
+  String _keyFor(MenuItemModel menuItem, MenuItemVariantModel? variant) {
+    return variant != null ? '${menuItem.id}_v${variant.id}' : '${menuItem.id}';
+  }
+
+  int quantityFor(MenuItemModel menuItem, MenuItemVariantModel? variant) {
+    final key = _keyFor(menuItem, variant);
+    return _items[key]?.quantity ?? 0;
+  }
+
+  void setPendingTableNumber(int restaurantId, String restaurantName, String tableNumber) {
+    // Scanning a QR for a different restaurant than what's currently in cart
+    // should start fresh, same rule as adding items from a different restaurant.
+    if (_restaurantId != null && _restaurantId != restaurantId) {
+      clear();
+    }
+    _restaurantId = restaurantId;
+    _restaurantName = restaurantName;
+    pendingTableNumber = tableNumber;
+    notifyListeners();
+  }
+
+  void clearPendingTableNumber() {
+    pendingTableNumber = null;
+    notifyListeners();
+  }
+
+  void addItem(
+    MenuItemModel menuItem,
+    int restaurantId,
+    String restaurantName, {
+    MenuItemVariantModel? variant,
+  }) {
     if (_restaurantId != null && _restaurantId != restaurantId) {
       clear();
     }
     _restaurantId = restaurantId;
     _restaurantName = restaurantName;
 
-    if (_items.containsKey(menuItem.id)) {
-      _items[menuItem.id]!.quantity += 1;
+    final key = _keyFor(menuItem, variant);
+    if (_items.containsKey(key)) {
+      _items[key]!.quantity += 1;
     } else {
-      _items[menuItem.id] = CartItem(menuItem: menuItem);
+      _items[key] = CartItem(menuItem: menuItem, variant: variant);
     }
     notifyListeners();
   }
 
-  void increment(int menuItemId) {
-    if (_items.containsKey(menuItemId)) {
-      _items[menuItemId]!.quantity += 1;
+  void incrementByKey(String key) {
+    if (_items.containsKey(key)) {
+      _items[key]!.quantity += 1;
       notifyListeners();
     }
   }
 
-  void decrement(int menuItemId) {
-    if (_items.containsKey(menuItemId)) {
-      if (_items[menuItemId]!.quantity > 1) {
-        _items[menuItemId]!.quantity -= 1;
+  void decrementByKey(String key) {
+    if (_items.containsKey(key)) {
+      if (_items[key]!.quantity > 1) {
+        _items[key]!.quantity -= 1;
       } else {
-        _items.remove(menuItemId);
+        _items.remove(key);
       }
       notifyListeners();
     }
@@ -64,8 +103,16 @@ class CartProvider extends ChangeNotifier {
     }
   }
 
-  void removeItem(int menuItemId) {
-    _items.remove(menuItemId);
+  void increment(MenuItemModel menuItem, MenuItemVariantModel? variant) {
+    incrementByKey(_keyFor(menuItem, variant));
+  }
+
+  void decrement(MenuItemModel menuItem, MenuItemVariantModel? variant) {
+    decrementByKey(_keyFor(menuItem, variant));
+  }
+
+  void removeItem(String key) {
+    _items.remove(key);
     if (_items.isEmpty) {
       _restaurantId = null;
       _restaurantName = null;
@@ -77,6 +124,7 @@ class CartProvider extends ChangeNotifier {
     _items.clear();
     _restaurantId = null;
     _restaurantName = null;
+    pendingTableNumber = null;
     notifyListeners();
   }
 }

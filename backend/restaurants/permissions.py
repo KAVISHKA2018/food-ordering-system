@@ -36,3 +36,14 @@ class IsRestaurantOwnerOfItem(permissions.BasePermission):
         if request.method in permissions.SAFE_METHODS:
             return True
         return obj.restaurant.owner == request.user
+
+
+class IsRestaurantOwnerOfVariant(permissions.BasePermission):
+    """
+    Only the admin who owns the parent restaurant (via menu_item.restaurant)
+    can edit/delete a variant. Everyone can still view (GET).
+    """
+    def has_object_permission(self, request, view, obj):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return obj.menu_item.restaurant.owner == request.user
