@@ -6,6 +6,7 @@ from restaurants.models import Restaurant, MenuItem, MenuItemVariant
 class TableSession(models.Model):
     class Status(models.TextChoices):
         OPEN = 'OPEN', 'Open'
+        PAYMENT_PENDING = 'PAYMENT_PENDING', 'Payment Pending'
         PAID = 'PAID', 'Paid'
         CLOSED = 'CLOSED', 'Closed'
 
@@ -16,7 +17,7 @@ class TableSession(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='table_sessions'
     )
     table_number = models.CharField(max_length=20)
-    status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -36,6 +37,7 @@ class Order(models.Model):
 
     class Status(models.TextChoices):
         AWAITING_PAYMENT = 'AWAITING_PAYMENT', 'Awaiting Payment'
+        PAYMENT_PENDING = 'PAYMENT_PENDING', 'Payment Pending Confirmation'
         PENDING = 'PENDING', 'Pending'
         CONFIRMED = 'CONFIRMED', 'Confirmed'
         PREPARING = 'PREPARING', 'Preparing'
@@ -64,6 +66,7 @@ class Order(models.Model):
     order_type = models.CharField(max_length=20, choices=OrderType.choices)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     delivery_address = models.CharField(max_length=255, blank=True)
+    contact_phone = models.CharField(max_length=20, blank=True)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

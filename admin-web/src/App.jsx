@@ -6,6 +6,7 @@ import DashboardPage from './pages/DashboardPage';
 import MenuManagementPage from './pages/MenuManagementPage';
 import OrdersPage from './pages/OrdersPage';
 import ReservationsPage from './pages/ReservationsPage';
+import TablesPage from './pages/TablesPage';
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
           <Route path="/menu" element={<ProtectedRoute><MenuManagementPage /></ProtectedRoute>} />
           <Route path="/orders" element={<ProtectedRoute><OrdersPage /></ProtectedRoute>} />
           <Route path="/reservations" element={<ProtectedRoute><ReservationsPage /></ProtectedRoute>} />
+          <Route path="/tables" element={<ProtectedRoute><TablesPage /></ProtectedRoute>} />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </AuthProvider>

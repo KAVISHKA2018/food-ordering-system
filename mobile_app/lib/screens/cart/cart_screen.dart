@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
 import '../../providers/cart_provider.dart';
 import '../../services/order_service.dart';
+import '../../utils/table_number_utils.dart';
+import '../checkout/delivery_details_screen.dart';
+import '../checkout/takeaway_payment_screen.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -13,30 +16,58 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> {
   String _orderType = 'TAKEAWAY';
-  final _addressController = TextEditingController();
+  String _deliveryAddress = '';
+  String _contactPhone = '';
   final _tableNumberController = TextEditingController();
   final _notesController = TextEditingController();
   bool _placing = false;
   bool _initializedFromCart = false;
 
-  final _orderTypes = const {
-    'DINE_IN': 'Dine In',
-    'TAKEAWAY': 'Takeaway',
-    'DELIVERY': 'Delivery',
-  };
+  // True when this cart session started from a QR scan / "Add More Food" —
+  // in that case the customer is physically at the restaurant, so Delivery
+  // should not be offered as an option.
+  bool _isTableFlow = false;
 
   @override
   void dispose() {
-    _addressController.dispose();
     _tableNumberController.dispose();
     _notesController.dispose();
     super.dispose();
   }
 
+  Map<String, String> get _availableOrderTypes {
+    if (_isTableFlow) {
+      return const {'DINE_IN': 'Dine In', 'TAKEAWAY': 'Takeaway'};
+    }
+    return const {'DINE_IN': 'Dine In', 'TAKEAWAY': 'Takeaway', 'DELIVERY': 'Delivery'};
+  }
+
+  Future<void> _handleSelectOrderType(String type) async {
+    if (type == 'DELIVERY') {
+      final result = await Navigator.push<DeliveryDetailsResult>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DeliveryDetailsScreen(
+            initialAddress: _deliveryAddress,
+            initialPhone: _contactPhone,
+          ),
+        ),
+      );
+      if (result == null) return; // cancelled — keep previous selection
+      setState(() {
+        _orderType = 'DELIVERY';
+        _deliveryAddress = result.address;
+        _contactPhone = result.phone;
+      });
+    } else {
+      setState(() => _orderType = type);
+    }
+  }
+
   Future<void> _placeOrder(CartProvider cart) async {
-    if (_orderType == 'DELIVERY' && _addressController.text.trim().isEmpty) {
+    if (_orderType == 'DELIVERY' && _deliveryAddress.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a delivery address')),
+        const SnackBar(content: Text('Please provide delivery details')),
       );
       return;
     }
@@ -57,12 +88,15 @@ class _CartScreenState extends State<CartScreen> {
             })
         .toList();
 
+    final normalizedTable = normalizeTableNumber(_tableNumberController.text);
+
     final result = await OrderService.createOrder(
       restaurantId: cart.restaurantId!,
       orderType: _orderType,
       items: items,
-      deliveryAddress: _addressController.text.trim(),
-      tableNumber: _tableNumberController.text.trim(),
+      deliveryAddress: _deliveryAddress,
+      contactPhone: _contactPhone,
+      tableNumber: normalizedTable,
       notes: _notesController.text.trim(),
     );
 
@@ -85,61 +119,27 @@ class _CartScreenState extends State<CartScreen> {
     cart.clear();
 
     if (!mounted) return;
-
-    if (order.status == 'AWAITING_PAYMENT') {
-      // Takeaway: payment is required before the order goes to the kitchen.
-      _showTakeawayPaymentDialog(order);
-    } else {
-      // Dine-in (Pay Later by default) or Delivery — order already sent to kitchen.
-      _showSuccessDialog(order, paid: false);
-    }
+    _showSuccessDialog(order);
   }
 
-  Future<void> _showTakeawayPaymentDialog(dynamic order) async {
-    bool paying = false;
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Payment Required'),
-              content: Text(
-                'Your takeaway order total is Rs. ${order.totalAmount.toStringAsFixed(0)}.\n\n'
-                'Please complete payment to send this order to the kitchen.',
-              ),
-              actions: [
-                paying
-                    ? const Padding(
-                        padding: EdgeInsets.all(8.0),
-                        child: CircularProgressIndicator(),
-                      )
-                    : ElevatedButton(
-                        onPressed: () async {
-                          setDialogState(() => paying = true);
-                          final payResult = await OrderService.payOrder(order.id);
-                          if (!mounted) return;
-                          Navigator.pop(dialogContext);
-                          if (payResult['success']) {
-                            _showSuccessDialog(payResult['order'], paid: true);
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Payment failed. Please try again from My Orders.')),
-                            );
-                          }
-                        },
-                        child: Text('Pay Now (Rs. ${order.totalAmount.toStringAsFixed(0)})'),
-                      ),
-              ],
-            );
-          },
-        );
-      },
+  Future<void> _goToTakeawayPayment(CartProvider cart) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TakeawayPaymentScreen(
+          restaurantId: cart.restaurantId!,
+          restaurantName: cart.restaurantName ?? 'Restaurant',
+          notes: _notesController.text.trim(),
+        ),
+      ),
     );
+    // The payment screen handles everything itself (create + clear cart on
+    // success, or nothing at all if cancelled). Just refresh this screen's
+    // state on return in case the cart was cleared.
+    if (mounted) setState(() {});
   }
 
-  void _showSuccessDialog(dynamic order, {required bool paid}) {
+  void _showSuccessDialog(dynamic order) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -148,9 +148,7 @@ class _CartScreenState extends State<CartScreen> {
         content: Text(
           order.orderType == 'DINE_IN'
               ? 'Your order #${order.id} has been sent to the kitchen. It has been added to your table\'s bill — pay anytime from "My Table".'
-              : paid
-                  ? 'Payment received. Your order #${order.id} has been sent to the kitchen.'
-                  : 'Your order #${order.id} has been placed successfully.',
+              : 'Your order #${order.id} has been placed successfully.',
         ),
         actions: [
           TextButton(
@@ -170,11 +168,20 @@ class _CartScreenState extends State<CartScreen> {
 
     if (!_initializedFromCart) {
       if (cart.pendingTableNumber != null) {
+        // Came from "Add More Food" — table number already known.
         _orderType = 'DINE_IN';
         _tableNumberController.text = cart.pendingTableNumber!;
+        _isTableFlow = true;
+      } else if (cart.isQRFlow) {
+        // Came from QR scan — Dine In confirmed, but table number is
+        // entered here at checkout instead of during scanning.
+        _orderType = 'DINE_IN';
+        _isTableFlow = true;
       }
       _initializedFromCart = true;
     }
+
+    final orderTypes = _availableOrderTypes;
 
     return Scaffold(
       appBar: AppBar(title: Text(cart.restaurantName ?? 'Your Cart')),
@@ -214,7 +221,7 @@ class _CartScreenState extends State<CartScreen> {
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
-                  children: _orderTypes.entries.map((e) {
+                  children: orderTypes.entries.map((e) {
                     return ChoiceChip(
                       label: Text(e.value),
                       selected: _orderType == e.key,
@@ -222,7 +229,7 @@ class _CartScreenState extends State<CartScreen> {
                       labelStyle: TextStyle(
                         color: _orderType == e.key ? Colors.white : AppColors.textDark,
                       ),
-                      onSelected: (_) => setState(() => _orderType = e.key),
+                      onSelected: (_) => _handleSelectOrderType(e.key),
                     );
                   }).toList(),
                 ),
@@ -230,12 +237,16 @@ class _CartScreenState extends State<CartScreen> {
                   const SizedBox(height: 16),
                   TextField(
                     controller: _tableNumberController,
+                    keyboardType: TextInputType.text,
                     decoration: const InputDecoration(
                       labelText: 'Table Number',
-                      hintText: 'e.g. 05',
+                      hintText: 'e.g. 3 or 03',
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.table_bar),
                     ),
+                    onEditingComplete: () {
+                      _tableNumberController.text = normalizeTableNumber(_tableNumberController.text);
+                    },
                   ),
                   const SizedBox(height: 8),
                   const Text(
@@ -245,11 +256,44 @@ class _CartScreenState extends State<CartScreen> {
                 ],
                 if (_orderType == 'DELIVERY') ...[
                   const SizedBox(height: 16),
-                  TextField(
-                    controller: _addressController,
-                    decoration: const InputDecoration(
-                      labelText: 'Delivery Address',
-                      border: OutlineInputBorder(),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardBackground,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.location_on_outlined, size: 18, color: AppColors.textGrey),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                _deliveryAddress.isEmpty ? 'No address set' : _deliveryAddress,
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.phone_outlined, size: 18, color: AppColors.textGrey),
+                            const SizedBox(width: 6),
+                            Text(_contactPhone.isEmpty ? 'No phone set' : _contactPhone,
+                                style: const TextStyle(fontSize: 13)),
+                          ],
+                        ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: () => _handleSelectOrderType('DELIVERY'),
+                            child: const Text('Edit'),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -279,10 +323,12 @@ class _CartScreenState extends State<CartScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                _placing
+                                _placing
                     ? const Center(child: CircularProgressIndicator())
                     : ElevatedButton(
-                        onPressed: () => _placeOrder(cart),
+                        onPressed: () => _orderType == 'TAKEAWAY'
+                            ? _goToTakeawayPayment(cart)
+                            : _placeOrder(cart),
                         style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           minimumSize: const Size(double.infinity, 0),

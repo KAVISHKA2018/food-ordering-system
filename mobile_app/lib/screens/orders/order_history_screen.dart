@@ -29,6 +29,8 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
     switch (status) {
       case 'AWAITING_PAYMENT':
         return Colors.redAccent;
+      case 'PAYMENT_PENDING':
+        return Colors.deepOrange;
       case 'PENDING':
         return Colors.orange;
       case 'CONFIRMED':
@@ -78,6 +80,39 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
     }
   }
 
+  Widget _paymentBadge(OrderModel order) {
+    if (order.paymentStatus == 'N/A') return const SizedBox.shrink();
+
+    Color color;
+    String label;
+    switch (order.paymentStatus) {
+      case 'PAID':
+        color = Colors.green;
+        label = 'Paid';
+        break;
+      case 'PENDING_CONFIRMATION':
+        color = Colors.deepOrange;
+        label = 'Payment Pending Confirmation';
+        break;
+      default:
+        color = Colors.red;
+        label = 'Unpaid';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 11),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -121,7 +156,6 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
               );
             }
 
-            // Most recent orders first
             final sortedOrders = List<OrderModel>.from(orders)
               ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
@@ -136,8 +170,18 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                     title: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Order #${order.id}',
-                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Order #${order.id}',
+                                  style: const TextStyle(fontWeight: FontWeight.bold)),
+                              if (order.restaurantName.isNotEmpty)
+                                Text(order.restaurantName,
+                                    style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
@@ -157,9 +201,17 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                     ),
                     subtitle: Padding(
                       padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        '${_orderTypeLabel(order.orderType)} · ${_formatDate(order.createdAt)}',
-                        style: const TextStyle(color: AppColors.textGrey, fontSize: 13),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${_orderTypeLabel(order.orderType)}'
+                              '${order.tableNumber != null ? " · Table ${order.tableNumber}" : ""}'
+                              ' · ${_formatDate(order.createdAt)}',
+                              style: const TextStyle(color: AppColors.textGrey, fontSize: 13),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     children: [
@@ -174,7 +226,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Expanded(
-                                        child: Text('${item.quantity}x ${item.itemName}'),
+                                        child: Text('${item.quantity}x ${item.displayName}'),
                                       ),
                                       Text('Rs. ${item.subtotal.toStringAsFixed(0)}'),
                                     ],
@@ -183,6 +235,11 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                             if (order.deliveryAddress.isNotEmpty) ...[
                               const SizedBox(height: 8),
                               Text('Deliver to: ${order.deliveryAddress}',
+                                  style: const TextStyle(color: AppColors.textGrey, fontSize: 13)),
+                            ],
+                            if (order.contactPhone.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text('Phone: ${order.contactPhone}',
                                   style: const TextStyle(color: AppColors.textGrey, fontSize: 13)),
                             ],
                             if (order.notes.isNotEmpty) ...[
@@ -199,6 +256,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                                     style: const TextStyle(fontWeight: FontWeight.bold)),
                               ],
                             ),
+                            _paymentBadge(order),
                             const SizedBox(height: 8),
                           ],
                         ),

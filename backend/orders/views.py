@@ -40,14 +40,20 @@ class OrderViewSet(viewsets.ModelViewSet):
         if new_status not in valid_statuses:
             return Response({"detail": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
 
+        if new_status == Order.Status.OUT_FOR_DELIVERY and order.order_type != Order.OrderType.DELIVERY:
+            return Response(
+                {"detail": "Only Delivery orders can be marked Out for Delivery."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         order.status = new_status
         order.save()
         return Response(OrderSerializer(order).data)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def pay(self, request, pk=None):
-        """Mock payment for a single order — used for Takeaway.
-        Moves the order from AWAITING_PAYMENT to PENDING so the kitchen sees it."""
+        """Customer taps Pay Now (Takeaway) — this only REQUESTS payment.
+        The restaurant admin must confirm cash received via confirm_payment."""
         order = self.get_object()
         if order.customer != request.user:
             return Response({"detail": "Not your order."}, status=status.HTTP_403_FORBIDDEN)
@@ -61,9 +67,27 @@ class OrderViewSet(viewsets.ModelViewSet):
             order=order,
             amount=order.total_amount,
             method=Payment.Method.MOCK,
-            status=Payment.Status.COMPLETED,
-            paid_at=timezone.now(),
+            status=Payment.Status.PENDING,
         )
+        order.status = Order.Status.PAYMENT_PENDING
+        order.save()
+        return Response(OrderSerializer(order).data)
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def confirm_payment(self, request, pk=None):
+        """Restaurant admin confirms cash payment received for a Takeaway order."""
+        order = self.get_object()
+        if order.restaurant.owner != request.user:
+            return Response({"detail": "Only the restaurant owner can confirm payment."}, status=status.HTTP_403_FORBIDDEN)
+
+        payment = order.payments.filter(status=Payment.Status.PENDING).order_by('-created_at').first()
+        if not payment:
+            return Response({"detail": "No pending payment to confirm for this order."}, status=status.HTTP_400_BAD_REQUEST)
+
+        payment.status = Payment.Status.COMPLETED
+        payment.paid_at = timezone.now()
+        payment.save()
+
         order.status = Order.Status.PENDING
         order.save()
         return Response(OrderSerializer(order).data)
@@ -76,19 +100,22 @@ class TableSessionViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         user = self.request.user
         if user.role == 'RESTAURANT_ADMIN':
-            return TableSession.objects.filter(restaurant__owner=user)
-        return TableSession.objects.filter(customer=user)
+            return TableSession.objects.filter(restaurant__owner=user).order_by('-created_at')
+        return TableSession.objects.filter(customer=user).order_by('-created_at')
 
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def active(self, request):
-        """The customer's currently open table sessions (their running tabs)."""
-        sessions = TableSession.objects.filter(customer=request.user, status=TableSession.Status.OPEN)
+        """The customer's currently open (or awaiting payment confirmation) table sessions."""
+        sessions = TableSession.objects.filter(
+            customer=request.user,
+            status__in=[TableSession.Status.OPEN, TableSession.Status.PAYMENT_PENDING],
+        )
         return Response(TableSessionSerializer(sessions, many=True).data)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def pay(self, request, pk=None):
-        """Mock 'Pay Now' for a dine-in table — pays the accumulated total
-        across all orders in this session."""
+        """Customer taps Pay Now for the whole table — only REQUESTS payment.
+        The restaurant admin must confirm cash received via confirm_payment."""
         session = self.get_object()
         if session.customer != request.user:
             return Response({"detail": "Not your table session."}, status=status.HTTP_403_FORBIDDEN)
@@ -99,9 +126,27 @@ class TableSessionViewSet(viewsets.ReadOnlyModelViewSet):
             table_session=session,
             amount=session.total_amount,
             method=Payment.Method.MOCK,
-            status=Payment.Status.COMPLETED,
-            paid_at=timezone.now(),
+            status=Payment.Status.PENDING,
         )
+        session.status = TableSession.Status.PAYMENT_PENDING
+        session.save()
+        return Response(TableSessionSerializer(session).data)
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def confirm_payment(self, request, pk=None):
+        """Restaurant admin confirms cash payment received for a table's bill."""
+        session = self.get_object()
+        if session.restaurant.owner != request.user:
+            return Response({"detail": "Only the restaurant owner can confirm payment."}, status=status.HTTP_403_FORBIDDEN)
+
+        payment = session.payments.filter(status=Payment.Status.PENDING).order_by('-created_at').first()
+        if not payment:
+            return Response({"detail": "No pending payment to confirm for this table."}, status=status.HTTP_400_BAD_REQUEST)
+
+        payment.status = Payment.Status.COMPLETED
+        payment.paid_at = timezone.now()
+        payment.save()
+
         session.status = TableSession.Status.PAID
         session.save()
         return Response(TableSessionSerializer(session).data)

@@ -53,6 +53,7 @@ export default function Sidebar() {
           <NavLink to="/menu" style={linkStyle}>Menu Management</NavLink>
           <NavLink to="/orders" style={linkStyle}>Orders</NavLink>
           <NavLink to="/reservations" style={linkStyle}>Reservations</NavLink>
+          <NavLink to="/tables" style={linkStyle}>Tables</NavLink>
         </nav>
       </div>
 

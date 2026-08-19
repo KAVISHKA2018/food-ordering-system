@@ -11,6 +11,11 @@ export const orderService = {
     const response = await apiClient.patch(`${API_CONFIG.orders}${orderId}/update_status/`, { status });
     return response.data;
   },
+
+  async confirmPayment(orderId) {
+    const response = await apiClient.post(`${API_CONFIG.orders}${orderId}/confirm_payment/`);
+    return response.data;
+  },
 };
 
 export default orderService;

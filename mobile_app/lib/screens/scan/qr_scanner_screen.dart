@@ -43,22 +43,12 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     final restaurantId = int.parse(match.group(1)!);
     if (!mounted) return;
 
-    final tableNumber = await _promptTableNumber();
-    if (tableNumber == null || tableNumber.trim().isEmpty) {
-      // Cancelled — resume scanning.
-      _handled = false;
-      await _controller.start();
-      return;
-    }
-
-    if (!mounted) return;
-
     try {
       final restaurant = await RestaurantService.getRestaurantDetail(restaurantId);
       if (!mounted) return;
 
       final cart = Provider.of<CartProvider>(context, listen: false);
-      cart.setPendingTableNumber(restaurant.id, restaurant.name, tableNumber.trim());
+      cart.setQRFlow(restaurant.id, restaurant.name);
 
       Navigator.pushReplacement(
         context,
@@ -74,36 +64,6 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
       _handled = false;
       await _controller.start();
     }
-  }
-
-  Future<String?> _promptTableNumber() async {
-    final controller = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Enter Table Number'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: TextInputType.text,
-          decoration: const InputDecoration(
-            hintText: 'e.g. 05',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, null),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Continue'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -136,7 +96,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
             left: 0,
             right: 0,
             child: const Text(
-              'Point your camera at the table QR code',
+              'Point your camera at the restaurant\'s QR code',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white, fontSize: 14),
             ),

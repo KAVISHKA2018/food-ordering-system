@@ -11,6 +11,7 @@ export const API_CONFIG = {
   menuItems: `${BASE_URL}/menu-items/`,
   menuItemVariants: `${BASE_URL}/menu-item-variants/`,
   orders: `${BASE_URL}/orders/`,
+  tableSessions: `${BASE_URL}/table-sessions/`,
   reservations: `${BASE_URL}/reservations/`,
 };
 

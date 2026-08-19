@@ -19,9 +19,15 @@ class CartProvider extends ChangeNotifier {
   int? _restaurantId;
   String? _restaurantName;
 
-  // Set when the customer scans a table QR code — carries the table number
-  // through to the Cart/Checkout screen so it defaults to Dine In.
+  // Set only when arriving via "Add More Food" from My Table — carries a
+  // known table number through to Checkout so it's pre-filled.
   String? pendingTableNumber;
+
+  // Set when arriving via QR scan — no table number known yet, but the
+  // customer is confirmed to be physically at the restaurant, so Checkout
+  // should default to Dine In and hide Delivery, while still asking for
+  // the table number itself at checkout.
+  bool isQRFlow = false;
 
   Map<String, CartItem> get items => _items;
   int? get restaurantId => _restaurantId;
@@ -43,20 +49,34 @@ class CartProvider extends ChangeNotifier {
     return _items[key]?.quantity ?? 0;
   }
 
+  /// Used by "Add More Food" (My Table screen) — table number already known.
   void setPendingTableNumber(int restaurantId, String restaurantName, String tableNumber) {
-    // Scanning a QR for a different restaurant than what's currently in cart
-    // should start fresh, same rule as adding items from a different restaurant.
     if (_restaurantId != null && _restaurantId != restaurantId) {
       clear();
     }
     _restaurantId = restaurantId;
     _restaurantName = restaurantName;
     pendingTableNumber = tableNumber;
+    isQRFlow = false;
+    notifyListeners();
+  }
+
+  /// Used by the QR scanner — table number not yet known, will be entered
+  /// by the customer at checkout.
+  void setQRFlow(int restaurantId, String restaurantName) {
+    if (_restaurantId != null && _restaurantId != restaurantId) {
+      clear();
+    }
+    _restaurantId = restaurantId;
+    _restaurantName = restaurantName;
+    isQRFlow = true;
+    pendingTableNumber = null;
     notifyListeners();
   }
 
   void clearPendingTableNumber() {
     pendingTableNumber = null;
+    isQRFlow = false;
     notifyListeners();
   }
 
@@ -125,6 +145,7 @@ class CartProvider extends ChangeNotifier {
     _restaurantId = null;
     _restaurantName = null;
     pendingTableNumber = null;
+    isQRFlow = false;
     notifyListeners();
   }
 }

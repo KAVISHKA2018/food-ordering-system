@@ -9,6 +9,7 @@ class OrderService {
     required String orderType,
     required List<Map<String, dynamic>> items,
     String deliveryAddress = '',
+    String contactPhone = '',
     String tableNumber = '',
     String notes = '',
   }) async {
@@ -16,6 +17,7 @@ class OrderService {
       'restaurant': restaurantId,
       'order_type': orderType,
       'delivery_address': deliveryAddress,
+      'contact_phone': contactPhone,
       'notes': notes,
       'items': items,
     };

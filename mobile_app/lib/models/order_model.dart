@@ -39,10 +39,13 @@ class OrderItemModel {
 class OrderModel {
   final int id;
   final int restaurantId;
+  final String restaurantName;
   final String orderType;
   final String status;
   final String deliveryAddress;
+  final String contactPhone;
   final String? tableNumber;
+  final String paymentStatus;
   final double totalAmount;
   final String notes;
   final List<OrderItemModel> items;
@@ -51,10 +54,13 @@ class OrderModel {
   OrderModel({
     required this.id,
     required this.restaurantId,
+    required this.restaurantName,
     required this.orderType,
     required this.status,
     required this.deliveryAddress,
+    this.contactPhone = '',
     this.tableNumber,
+    this.paymentStatus = 'N/A',
     required this.totalAmount,
     required this.notes,
     required this.items,
@@ -65,10 +71,13 @@ class OrderModel {
     return OrderModel(
       id: json['id'],
       restaurantId: json['restaurant'],
+      restaurantName: json['restaurant_name'] ?? '',
       orderType: json['order_type'],
       status: json['status'],
       deliveryAddress: json['delivery_address'] ?? '',
+      contactPhone: json['contact_phone'] ?? '',
       tableNumber: json['table_number'],
+      paymentStatus: json['payment_status'] ?? 'N/A',
       totalAmount: double.parse(json['total_amount'].toString()),
       notes: json['notes'] ?? '',
       items: (json['items'] as List<dynamic>? ?? [])

@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
 import '../../models/table_session_model.dart';
 import '../../services/table_session_service.dart';
+import '../../services/restaurant_service.dart';
+import '../../providers/cart_provider.dart';
+import '../restaurant/restaurant_detail_screen.dart';
 
 class MyTableScreen extends StatefulWidget {
   const MyTableScreen({super.key});
@@ -13,6 +17,7 @@ class MyTableScreen extends StatefulWidget {
 class _MyTableScreenState extends State<MyTableScreen> {
   late Future<List<TableSessionModel>> _sessionsFuture;
   int? _payingSessionId;
+  int? _loadingAddMoreId;
 
   @override
   void initState() {
@@ -26,13 +31,39 @@ class _MyTableScreenState extends State<MyTableScreen> {
     });
   }
 
+  Future<void> _addMoreFood(TableSessionModel session) async {
+    setState(() => _loadingAddMoreId = session.id);
+    try {
+      final restaurant = await RestaurantService.getRestaurantDetail(session.restaurantId);
+      if (!mounted) return;
+
+      final cart = Provider.of<CartProvider>(context, listen: false);
+      cart.setPendingTableNumber(restaurant.id, restaurant.name, session.tableNumber);
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RestaurantDetailScreen(restaurantId: restaurant.id),
+        ),
+      ).then((_) => _refresh());
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open menu: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _loadingAddMoreId = null);
+    }
+  }
+
   Future<void> _payNow(TableSessionModel session) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Confirm Payment'),
         content: Text(
-          'Pay Rs. ${session.totalAmount.toStringAsFixed(0)} for Table ${session.tableNumber} at ${session.restaurantName}?',
+          'Pay Rs. ${session.totalAmount.toStringAsFixed(0)} for Table ${session.tableNumber} at ${session.restaurantName}?\n\n'
+          'You will pay at the counter — the restaurant will confirm once received.',
         ),
         actions: [
           TextButton(
@@ -57,12 +88,12 @@ class _MyTableScreenState extends State<MyTableScreen> {
 
     if (result['success']) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Payment successful. Thank you!')),
+        const SnackBar(content: Text('Payment requested. Please pay at the counter.')),
       );
       _refresh();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Payment failed. Please try again.')),
+        const SnackBar(content: Text('Payment request failed. Please try again.')),
       );
     }
   }
@@ -119,6 +150,8 @@ class _MyTableScreenState extends State<MyTableScreen> {
               itemBuilder: (context, index) {
                 final session = sessions[index];
                 final isPaying = _payingSessionId == session.id;
+                final isAddingMore = _loadingAddMoreId == session.id;
+                final isPaymentPending = session.status == 'PAYMENT_PENDING';
 
                 return Card(
                   margin: const EdgeInsets.only(bottom: 16),
@@ -144,11 +177,17 @@ class _MyTableScreenState extends State<MyTableScreen> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(
-                                color: Colors.orange.withValues(alpha: 0.15),
+                                color: (isPaymentPending ? Colors.orange : Colors.blue).withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(20),
                               ),
-                              child: const Text('Open',
-                                  style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.w600)),
+                              child: Text(
+                                isPaymentPending ? 'Payment Pending' : 'Open',
+                                style: TextStyle(
+                                  color: isPaymentPending ? Colors.orange : Colors.blue,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -158,7 +197,7 @@ class _MyTableScreenState extends State<MyTableScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Order #${order.id}',
+                                  Text('Order #${order.id} · ${order.status}',
                                       style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
                                   ...order.items.map((item) => Padding(
                                         padding: const EdgeInsets.only(left: 8, top: 2),
@@ -186,15 +225,33 @@ class _MyTableScreenState extends State<MyTableScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        isPaying
-                            ? const Center(child: CircularProgressIndicator())
-                            : ElevatedButton(
-                                onPressed: () => _payNow(session),
-                                style: ElevatedButton.styleFrom(
-                                  minimumSize: const Size(double.infinity, 44),
+                        if (isPaymentPending)
+                          const Text(
+                            'Waiting for the restaurant to confirm your payment.',
+                            style: TextStyle(color: AppColors.textGrey, fontSize: 12),
+                          )
+                        else ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.add, size: 18),
+                                  label: const Text('Add More Food'),
+                                  onPressed: isAddingMore ? null : () => _addMoreFood(session),
                                 ),
-                                child: const Text('Pay Now'),
                               ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: isPaying
+                                    ? const Center(child: CircularProgressIndicator())
+                                    : ElevatedButton(
+                                        onPressed: () => _payNow(session),
+                                        child: const Text('Pay Now'),
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
