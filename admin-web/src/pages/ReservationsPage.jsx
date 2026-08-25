@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import reservationService from '../services/reservationService';
+import tableSessionService from '../services/tableSessionService';
 
 const STATUS_COLORS = {
   PENDING: '#FF9800',
@@ -11,7 +12,11 @@ const STATUS_COLORS = {
   NO_SHOW: '#795548',
 };
 
-const STATUS_OPTIONS = ['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
+const PAYMENT_INFO = {
+  UNPAID: { label: 'Unpaid', color: '#8E8E8E' },
+  PENDING_CONFIRMATION: { label: 'Payment Pending Confirmation', color: '#FB8C00' },
+  PAID: { label: 'Paid', color: '#4CAF50' },
+};
 
 function statusLabel(status) {
   return status.replace(/_/g, ' ').replace(/\w\S*/g, (w) => w[0] + w.slice(1).toLowerCase());
@@ -23,7 +28,6 @@ function formatDate(dateStr) {
 }
 
 function formatTime(timeStr) {
-  // timeStr comes as "HH:MM:SS" from Django's TimeField
   const [h, m] = timeStr.split(':');
   const hour = parseInt(h, 10);
   const period = hour >= 12 ? 'PM' : 'AM';
@@ -37,6 +41,7 @@ export default function ReservationsPage() {
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('UPCOMING');
   const [updatingId, setUpdatingId] = useState(null);
+  const [tableInputs, setTableInputs] = useState({}); // { [reservationId]: "value being typed" }
 
   useEffect(() => {
     loadReservations();
@@ -56,13 +61,45 @@ export default function ReservationsPage() {
     }
   };
 
+  const handleAssignTable = async (reservation) => {
+    const value = (tableInputs[reservation.id] ?? reservation.table_number ?? '').trim();
+    if (!value) {
+      setError('Please enter a table number.');
+      return;
+    }
+    setUpdatingId(reservation.id);
+    try {
+      await reservationService.assignTable(reservation.id, value);
+      loadReservations();
+    } catch (err) {
+      setError('Failed to assign table.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   const handleStatusChange = async (reservation, newStatus) => {
     setUpdatingId(reservation.id);
     try {
       await reservationService.updateStatus(reservation.id, newStatus);
       loadReservations();
     } catch (err) {
-      setError('Failed to update reservation status.');
+      const msg = err.response?.data?.detail || 'Failed to update reservation status.';
+      setError(msg);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleConfirmPayment = async (reservation) => {
+    if (!reservation.table_session) return;
+    if (!confirm(`Confirm cash payment received for this reservation's table?`)) return;
+    setUpdatingId(reservation.id);
+    try {
+      await tableSessionService.confirmPayment(reservation.table_session);
+      loadReservations();
+    } catch (err) {
+      setError('Failed to confirm payment.');
     } finally {
       setUpdatingId(null);
     }
@@ -87,6 +124,8 @@ export default function ReservationsPage() {
     });
 
   if (loading) return <Layout><div style={styles.page}>Loading...</div></Layout>;
+
+  const STATUS_OPTIONS = ['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
 
   return (
     <Layout>
@@ -114,96 +153,174 @@ export default function ReservationsPage() {
           <p style={{ color: '#8E8E8E' }}>No reservations in this category.</p>
         ) : (
           <div style={styles.grid}>
-            {filteredReservations.map((res) => (
-              <div key={res.id} style={styles.card}>
-                <div style={styles.cardHeader}>
-                  <div>
-                    <strong style={{ fontSize: '16px' }}>{formatDate(res.reservation_date)}</strong>
-                    <div style={{ fontSize: '14px', color: '#8E8E8E' }}>{formatTime(res.reservation_time)}</div>
-                  </div>
-                  <span
-                    style={{
-                      ...styles.badge,
-                      backgroundColor: `${STATUS_COLORS[res.status]}22`,
-                      color: STATUS_COLORS[res.status],
-                    }}
-                  >
-                    {statusLabel(res.status)}
-                  </span>
-                </div>
+            {filteredReservations.map((res) => {
+              const paymentInfo = PAYMENT_INFO[res.payment_status];
+              const isUpdating = updatingId === res.id;
+              const canEditTable = ['PENDING', 'CONFIRMED'].includes(res.status);
 
-                <div style={styles.infoRow}>
-                  <span>👤 {res.customer_username}</span>
-                  <span>👥 {res.party_size} {res.party_size === 1 ? 'guest' : 'guests'}</span>
-                </div>
-
-                {res.special_requests && (
-                  <p style={styles.smallNote}>📝 {res.special_requests}</p>
-                )}
-
-                {res.pre_order_items?.length > 0 && (
-                  <div style={styles.preOrderBox}>
-                    <p style={styles.preOrderTitle}>Pre-Order</p>
-                    {res.pre_order_items.map((item) => (
-                      <div key={item.id} style={styles.itemRow}>
-                        <span>{item.quantity}x {item.item_name}</span>
-                        <span>Rs. {parseFloat(item.subtotal).toFixed(0)}</span>
+              return (
+                <div key={res.id} style={styles.card}>
+                  <div style={styles.cardHeader}>
+                    <div>
+                      <div style={{ fontSize: '12px', color: '#8E8E8E', fontWeight: 600 }}>
+                        Reservation #{res.id}
                       </div>
-                    ))}
-                    <div style={styles.totalRow}>
-                      <strong>Pre-Order Total</strong>
-                      <strong>Rs. {parseFloat(res.pre_order_total).toFixed(0)}</strong>
+                      <strong style={{ fontSize: '16px' }}>{formatDate(res.reservation_date)}</strong>
+                      <div style={{ fontSize: '14px', color: '#8E8E8E' }}>{formatTime(res.reservation_time)}</div>
                     </div>
+                    <span
+                      style={{
+                        ...styles.badge,
+                        backgroundColor: `${STATUS_COLORS[res.status]}22`,
+                        color: STATUS_COLORS[res.status],
+                      }}
+                    >
+                      {statusLabel(res.status)}
+                    </span>
                   </div>
-                )}
 
-                {!['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(res.status) && (
-                  <div style={styles.actions}>
-                    {res.status === 'PENDING' && (
-                      <button
-                        style={styles.primaryBtn}
-                        disabled={updatingId === res.id}
-                        onClick={() => handleStatusChange(res, 'CONFIRMED')}
-                      >
-                        Confirm
-                      </button>
-                    )}
-                    {res.status === 'CONFIRMED' && (
-                      <button
-                        style={styles.primaryBtn}
-                        disabled={updatingId === res.id}
-                        onClick={() => handleStatusChange(res, 'SEATED')}
-                      >
-                        Mark Seated
-                      </button>
-                    )}
-                    {res.status === 'SEATED' && (
-                      <button
-                        style={styles.primaryBtn}
-                        disabled={updatingId === res.id}
-                        onClick={() => handleStatusChange(res, 'COMPLETED')}
-                      >
-                        Mark Completed
-                      </button>
-                    )}
-                    <button
-                      style={styles.secondaryActionBtn}
-                      disabled={updatingId === res.id}
-                      onClick={() => handleStatusChange(res, 'NO_SHOW')}
-                    >
-                      No Show
-                    </button>
-                    <button
-                      style={styles.cancelBtn}
-                      disabled={updatingId === res.id}
-                      onClick={() => handleStatusChange(res, 'CANCELLED')}
-                    >
-                      Cancel
-                    </button>
+                  <div style={styles.infoRow}>
+                    <span>👤 {res.customer_username}</span>
+                    <span>👥 {res.party_size} {res.party_size === 1 ? 'guest' : 'guests'}</span>
                   </div>
-                )}
-              </div>
-            ))}
+
+                  {res.special_requests && (
+                    <p style={styles.smallNote}>📝 {res.special_requests}</p>
+                  )}
+
+                  {res.pre_order_items?.length > 0 && (
+                    <div style={styles.preOrderBox}>
+                      <p style={styles.preOrderTitle}>Original Pre-Order</p>
+                      {res.pre_order_items.map((item) => (
+                        <div key={item.id} style={styles.itemRow}>
+                          <span>{item.quantity}x {item.item_name}</span>
+                          <span>Rs. {parseFloat(item.subtotal).toFixed(0)}</span>
+                        </div>
+                      ))}
+                      <div style={styles.totalRow}>
+                        <span>Pre-Order Subtotal</span>
+                        <span>Rs. {parseFloat(res.pre_order_total).toFixed(0)}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {res.table_session && (
+                    <div style={styles.billBox}>
+                      <div style={styles.totalRow}>
+                        <strong>Current Table Bill</strong>
+                        <strong>Rs. {parseFloat(res.current_bill_total).toFixed(0)}</strong>
+                      </div>
+                      <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8E8E8E' }}>
+                        Includes pre-order + any food added after seating
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Table assignment */}
+                  <div style={styles.tableSection}>
+                    <label style={styles.smallLabel}>Table Number</label>
+                    {canEditTable ? (
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <input
+                          style={styles.tableInput}
+                          placeholder="e.g. 07"
+                          value={tableInputs[res.id] ?? res.table_number ?? ''}
+                          onChange={(e) =>
+                            setTableInputs({ ...tableInputs, [res.id]: e.target.value })
+                          }
+                        />
+                        <button
+                          style={styles.assignBtn}
+                          disabled={isUpdating}
+                          onClick={() => handleAssignTable(res)}
+                        >
+                          {res.table_number ? 'Update' : 'Assign'}
+                        </button>
+                      </div>
+                    ) : (
+                      <p style={{ margin: 0, fontWeight: 600 }}>
+                        {res.table_number ? `Table ${res.table_number}` : '—'}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Payment status (only shown once seated / table session exists) */}
+                  {paymentInfo && (
+                    <div style={{ marginTop: '10px' }}>
+                      <span
+                        style={{
+                          ...styles.badge,
+                          backgroundColor: `${paymentInfo.color}22`,
+                          color: paymentInfo.color,
+                        }}
+                      >
+                        {paymentInfo.label}
+                      </span>
+                      {res.payment_status === 'PENDING_CONFIRMATION' && (
+                        <button
+                          style={styles.confirmPaymentBtn}
+                          disabled={isUpdating}
+                          onClick={() => handleConfirmPayment(res)}
+                        >
+                          {isUpdating ? 'Confirming...' : 'Confirm Cash Payment Received'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Status action buttons */}
+                  {!['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(res.status) && (
+                    <div style={styles.actions}>
+                      {res.status === 'PENDING' && (
+                        <button
+                          style={{
+                            ...styles.primaryBtn,
+                            ...(res.table_number ? {} : styles.primaryBtnDisabled),
+                          }}
+                          disabled={isUpdating || !res.table_number}
+                          title={!res.table_number ? 'Assign a table before confirming' : ''}
+                          onClick={() => handleStatusChange(res, 'CONFIRMED')}
+                        >
+                          {res.table_number ? 'Confirm' : 'Assign table to confirm'}
+                        </button>
+                      )}
+                      {res.status === 'CONFIRMED' && (
+                        <button
+                          style={styles.primaryBtn}
+                          disabled={isUpdating}
+                          onClick={() => handleStatusChange(res, 'SEATED')}
+                        >
+                          Mark Seated
+                        </button>
+                      )}
+                      {res.status === 'SEATED' && (
+                        <button
+                          style={styles.primaryBtn}
+                          disabled={isUpdating}
+                          onClick={() => handleStatusChange(res, 'COMPLETED')}
+                        >
+                          Mark Completed
+                        </button>
+                      )}
+                      <button
+                        style={styles.secondaryActionBtn}
+                        disabled={isUpdating}
+                        onClick={() => handleStatusChange(res, 'NO_SHOW')}
+                      >
+                        No Show
+                      </button>
+                      <button
+                        style={styles.cancelBtn}
+                        disabled={isUpdating}
+                        onClick={() => handleStatusChange(res, 'CANCELLED')}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -230,10 +347,26 @@ const styles = {
   preOrderTitle: { fontSize: '12px', fontWeight: 700, color: '#E8865A', margin: '0 0 6px' },
   itemRow: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' },
   totalRow: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '6px', borderTop: '1px solid #eee', paddingTop: '6px' },
+  tableSection: { marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #f0f0f0' },
+  smallLabel: { fontSize: '11px', fontWeight: 700, color: '#8E8E8E', display: 'block', marginBottom: '4px' },
+  tableInput: {
+    flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '13px',
+  },
+  assignBtn: {
+    padding: '8px 12px', backgroundColor: '#2B2B2B', color: '#fff', border: 'none',
+    borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
+  },
+  confirmPaymentBtn: {
+    display: 'block', width: '100%', padding: '9px', backgroundColor: '#FB8C00', color: '#fff',
+    border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, marginTop: '8px',
+  },
   actions: { display: 'flex', gap: '6px', marginTop: '14px', flexWrap: 'wrap' },
   primaryBtn: {
     flex: 1, padding: '9px', backgroundColor: '#E8865A', color: '#fff', border: 'none',
     borderRadius: '8px', cursor: 'pointer', fontSize: '12px', minWidth: '90px',
+  },
+  primaryBtnDisabled: {
+    backgroundColor: '#ddd', color: '#888', cursor: 'not-allowed',
   },
   secondaryActionBtn: {
     padding: '9px 12px', backgroundColor: '#fff', color: '#795548', border: '1px solid #795548',
@@ -242,5 +375,8 @@ const styles = {
   cancelBtn: {
     padding: '9px 12px', backgroundColor: '#fff', color: '#E53935', border: '1px solid #E53935',
     borderRadius: '8px', cursor: 'pointer', fontSize: '12px',
+  },
+    billBox: {
+    backgroundColor: '#EEF7ED', borderRadius: '8px', padding: '10px', marginTop: '10px',
   },
 };

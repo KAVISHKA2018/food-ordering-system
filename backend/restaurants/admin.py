@@ -87,6 +87,7 @@ class RestaurantAdmin(admin.ModelAdmin):
         base_fields = [
             'name', 'description', 'address', 'phone_number', 'email',
             'logo', 'cover_image', 'opening_time', 'closing_time', 'is_active',
+            'supports_dine_in', 'supports_takeaway', 'supports_delivery', 'supports_reservations',
         ]
         if obj is None:
             return base_fields + ['new_admin_username', 'new_admin_email', 'new_admin_password']

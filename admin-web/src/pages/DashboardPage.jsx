@@ -205,6 +205,19 @@ export default function DashboardPage() {
             <p style={{ color: '#8E8E8E' }}>Loading QR code...</p>
           )}
         </div>
+
+        <div style={styles.servicesCard}>
+          <h3 style={{ margin: '0 0 10px' }}>Services Offered</h3>
+          <p style={{ margin: '0 0 12px', color: '#8E8E8E', fontSize: '12px' }}>
+            Set by the System Administrator. Contact them to change what your restaurant offers.
+          </p>
+          <div style={styles.serviceBadges}>
+            <ServiceBadge label="Dine In" enabled={restaurant.supports_dine_in} />
+            <ServiceBadge label="Takeaway" enabled={restaurant.supports_takeaway} />
+            <ServiceBadge label="Delivery" enabled={restaurant.supports_delivery} />
+            <ServiceBadge label="Reservations" enabled={restaurant.supports_reservations} />
+          </div>
+        </div>
         
         {/* Stats grid */}
         <div style={styles.statsGrid}>
@@ -258,6 +271,21 @@ function StatCard({ label, value, color }) {
       <p style={{ ...styles.statLabel, color }}>{label}</p>
       <p style={styles.statValue}>{value}</p>
     </div>
+  );
+}
+
+function ServiceBadge({ label, enabled }) {
+  return (
+    <span
+      style={{
+        ...styles.serviceBadge,
+        backgroundColor: enabled ? '#E8F5E9' : '#FAFAFA',
+        color: enabled ? '#4CAF50' : '#BDBDBD',
+        border: `1px solid ${enabled ? '#4CAF50' : '#ddd'}`,
+      }}
+    >
+      {enabled ? '✓' : '✕'} {label}
+    </span>
   );
 }
 
@@ -316,4 +344,12 @@ const styles = {
     marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
   },
   qrImage: { width: '120px', height: '120px', border: '1px solid #eee', borderRadius: '8px' },
+  
+  servicesCard: {
+    backgroundColor: '#fff', borderRadius: '16px', padding: '20px', marginBottom: '24px',
+  },
+  serviceBadges: { display: 'flex', gap: '10px', flexWrap: 'wrap' },
+  serviceBadge: {
+    padding: '6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 600,
+  },
 };

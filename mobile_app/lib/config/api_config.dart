@@ -1,5 +1,5 @@
 class ApiConfig {
-  static const String baseUrl = 'http://192.168.1.3:8000/api';
+  static const String baseUrl = 'http://192.168.1.7:8000/api';
 
   static const String register = '$baseUrl/accounts/register/';
   static const String login = '$baseUrl/accounts/login/';
@@ -8,6 +8,8 @@ class ApiConfig {
   static const String menuItems = '$baseUrl/menu-items/';
   static const String orders = '$baseUrl/orders/';
   static const String reservations = '$baseUrl/reservations/';
+  static const String registerDevice = '$baseUrl/notifications/register-device/';
+  static const String unregisterDevice = '$baseUrl/notifications/unregister-device/';
 
   static String imageUrl(String? path) {
     if (path == null || path.isEmpty) return '';

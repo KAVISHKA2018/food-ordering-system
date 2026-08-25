@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from .models import Order, TableSession, Payment
 from .serializers import OrderSerializer, OrderCreateSerializer, TableSessionSerializer, PaymentSerializer
 from .permissions import IsOrderOwnerOrRestaurantStaff
+from notifications.fcm import send_push_notification
 
 
 class OrderViewSet(viewsets.ModelViewSet):
@@ -48,6 +49,14 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         order.status = new_status
         order.save()
+
+        send_push_notification(
+            order.customer,
+            title=f"Order #{order.id} Update",
+            body=f"Your order is now {order.get_status_display()}.",
+            data={'type': 'order', 'id': order.id},
+        )
+
         return Response(OrderSerializer(order).data)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
@@ -90,6 +99,14 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         order.status = Order.Status.PENDING
         order.save()
+
+        send_push_notification(
+            order.customer,
+            title="Payment Confirmed",
+            body=f"Your payment for order #{order.id} has been confirmed. It's now being prepared.",
+            data={'type': 'order', 'id': order.id},
+        )
+
         return Response(OrderSerializer(order).data)
 
 
@@ -130,11 +147,21 @@ class TableSessionViewSet(viewsets.ReadOnlyModelViewSet):
         )
         session.status = TableSession.Status.PAYMENT_PENDING
         session.save()
+
+        send_push_notification(
+            session.customer,
+            title="Payment Confirmed",
+            body=f"Your payment for Table {session.table_number} has been confirmed. Thank you!",
+            data={'type': 'table_session', 'id': session.id},
+        )
+        
         return Response(TableSessionSerializer(session).data)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def confirm_payment(self, request, pk=None):
-        """Restaurant admin confirms cash payment received for a table's bill."""
+        """Restaurant admin confirms cash payment received for a table's bill.
+        If this table session came from a reservation, that reservation is
+        automatically marked Completed at the same time."""
         session = self.get_object()
         if session.restaurant.owner != request.user:
             return Response({"detail": "Only the restaurant owner can confirm payment."}, status=status.HTTP_403_FORBIDDEN)
@@ -149,4 +176,26 @@ class TableSessionViewSet(viewsets.ReadOnlyModelViewSet):
 
         session.status = TableSession.Status.PAID
         session.save()
+
+        # If this table session originated from a reservation, close it out too.
+        linked_reservations = session.reservations.exclude(
+            status__in=['COMPLETED', 'CANCELLED', 'NO_SHOW']
+        )
+        for reservation in linked_reservations:
+            reservation.status = 'COMPLETED'
+            reservation.save()
+            send_push_notification(
+                reservation.customer,
+                title="Reservation Completed",
+                body=f"Your payment has been confirmed. Thank you for dining with us!",
+                data={'type': 'reservation', 'id': reservation.id},
+            )
+
+        send_push_notification(
+            session.customer,
+            title="Payment Confirmed",
+            body=f"Your payment for Table {session.table_number} has been confirmed. Thank you!",
+            data={'type': 'table_session', 'id': session.id},
+        )
+
         return Response(TableSessionSerializer(session).data)

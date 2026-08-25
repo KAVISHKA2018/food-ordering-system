@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "351576317463",
+    "project_id": "food-ordering-system-f9449",
+    "storage_bucket": "food-ordering-system-f9449.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:351576317463:android:9a45ffa70fba619efbc652",
+        "android_client_info": {
+          "package_name": "com.kavishka.foodordering.mobile_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA0vh6dRG-t7wxX7rMhbJpjF0Om0U3pzmc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

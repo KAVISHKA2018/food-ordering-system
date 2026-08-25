@@ -91,6 +91,11 @@ export default function TablesPage() {
                       <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#8E8E8E' }}>
                         {session.customer_username}
                       </p>
+                      {session.from_reservation && (
+                        <span style={styles.reservationTag}>
+                          Reservation #{session.from_reservation}
+                        </span>
+                      )}
                     </div>
                     <span style={{ ...styles.badge, backgroundColor: `${info.color}22`, color: info.color }}>
                       {info.label}
@@ -154,5 +159,15 @@ const styles = {
   confirmBtn: {
     width: '100%', padding: '10px', backgroundColor: '#FB8C00', color: '#fff', border: 'none',
     borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600,
+  },
+    reservationTag: {
+    display: 'inline-block',
+    marginTop: '6px',
+    padding: '2px 8px',
+    backgroundColor: '#EDE7F6',
+    color: '#673AB7',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: 600,
   },
 };

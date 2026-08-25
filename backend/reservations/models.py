@@ -2,7 +2,6 @@ from django.db import models
 from django.conf import settings
 from restaurants.models import Restaurant, MenuItem
 
-
 class Reservation(models.Model):
     class Status(models.TextChoices):
         PENDING = 'PENDING', 'Pending'
@@ -26,6 +25,14 @@ class Reservation(models.Model):
     reservation_time = models.TimeField()
     party_size = models.PositiveIntegerField()
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    table_number = models.CharField(max_length=20, blank=True)
+    table_session = models.ForeignKey(
+        'orders.TableSession',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reservations'
+    )
     special_requests = models.TextField(blank=True)
     pre_order_total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -36,7 +43,6 @@ class Reservation(models.Model):
 
     def __str__(self):
         return f"Reservation #{self.id} - {self.customer.username} - {self.restaurant.name}"
-
 
 class PreOrderItem(models.Model):
     reservation = models.ForeignKey(
@@ -50,7 +56,15 @@ class PreOrderItem(models.Model):
         null=True,
         related_name='pre_order_items'
     )
-    item_name = models.CharField(max_length=150)  # snapshot
+    variant = models.ForeignKey(
+        'restaurants.MenuItemVariant',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='pre_order_items'
+    )
+    item_name = models.CharField(max_length=150)
+    variant_name = models.CharField(max_length=50, blank=True)
     quantity = models.PositiveIntegerField(default=1)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
@@ -60,4 +74,5 @@ class PreOrderItem(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.quantity}x {self.item_name}"
+        label = f" ({self.variant_name})" if self.variant_name else ""
+        return f"{self.quantity}x {self.item_name}{label}"

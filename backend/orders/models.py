@@ -63,6 +63,15 @@ class Order(models.Model):
         blank=True,
         related_name='orders'
     )
+
+    reservation = models.ForeignKey(
+        'reservations.Reservation',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='converted_orders'
+    )
+    
     order_type = models.CharField(max_length=20, choices=OrderType.choices)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     delivery_address = models.CharField(max_length=255, blank=True)

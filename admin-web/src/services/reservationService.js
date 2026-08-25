@@ -7,6 +7,14 @@ export const reservationService = {
     return response.data;
   },
 
+  async assignTable(reservationId, tableNumber) {
+    const response = await apiClient.patch(
+      `${API_CONFIG.reservations}${reservationId}/assign_table/`,
+      { table_number: tableNumber }
+    );
+    return response.data;
+  },
+
   async updateStatus(reservationId, status) {
     const response = await apiClient.patch(
       `${API_CONFIG.reservations}${reservationId}/update_status/`,

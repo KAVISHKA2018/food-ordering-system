@@ -38,9 +38,22 @@ class RestaurantSerializer(serializers.ModelSerializer):
             'id', 'owner', 'name', 'description', 'address',
             'phone_number', 'email', 'logo', 'cover_image',
             'opening_time', 'closing_time', 'is_active',
+            'supports_dine_in', 'supports_takeaway', 'supports_delivery', 'supports_reservations',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'owner', 'created_at', 'updated_at']
+
+    def update(self, instance, validated_data):
+        request = self.context.get('request')
+        is_system_admin = request and request.user.is_authenticated and (
+            request.user.is_staff or request.user.is_superuser
+        )
+        if not is_system_admin:
+            validated_data.pop('supports_dine_in', None)
+            validated_data.pop('supports_takeaway', None)
+            validated_data.pop('supports_delivery', None)
+            validated_data.pop('supports_reservations', None)
+        return super().update(instance, validated_data)
 
 
 class RestaurantDetailSerializer(RestaurantSerializer):

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
+import '../services/notification_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   Map<String, dynamic>? _user;
@@ -44,6 +45,7 @@ class AuthProvider extends ChangeNotifier {
     if (result['success']) {
       _user = await AuthService.getCurrentUser();
       _isLoading = false;
+      NotificationService.registerCurrentDevice();
       notifyListeners();
       return true;
     } else {
@@ -76,6 +78,7 @@ class AuthProvider extends ChangeNotifier {
     if (result['success']) {
       _user = result['user'];
       _isLoading = false;
+      NotificationService.registerCurrentDevice();
       notifyListeners();
       return true;
     } else {
@@ -90,11 +93,13 @@ class AuthProvider extends ChangeNotifier {
     final user = await AuthService.getCurrentUser();
     if (user != null) {
       _user = user;
+      NotificationService.registerCurrentDevice();
       notifyListeners();
     }
   }
 
   Future<void> logout() async {
+    await NotificationService.unregisterCurrentDevice();
     await AuthService.logout();
     _user = null;
     notifyListeners();

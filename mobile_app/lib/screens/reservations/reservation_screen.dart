@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../config/app_theme.dart';
 import '../../models/restaurant_model.dart';
 import '../../services/reservation_service.dart';
+import 'preorder_selection_screen.dart';
 
 class ReservationScreen extends StatefulWidget {
   final RestaurantModel restaurant;
@@ -16,7 +17,7 @@ class _ReservationScreenState extends State<ReservationScreen> {
   TimeOfDay? _selectedTime;
   int _partySize = 2;
   final _requestsController = TextEditingController();
-  final Map<int, int> _preOrderQuantities = {}; // menuItemId -> quantity
+  List<SelectedPreOrderItem> _selectedPreOrder = [];
   bool _submitting = false;
 
   @override
@@ -43,16 +44,23 @@ class _ReservationScreenState extends State<ReservationScreen> {
     if (picked != null) setState(() => _selectedTime = picked);
   }
 
-  double get _preOrderTotal {
-    double total = 0;
-    for (final category in widget.restaurant.categories) {
-      for (final item in category.menuItems) {
-        final qty = _preOrderQuantities[item.id] ?? 0;
-        total += item.price * qty;
-      }
+  Future<void> _openPreOrderSelection() async {
+    final result = await Navigator.push<List<SelectedPreOrderItem>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PreOrderSelectionScreen(
+          restaurant: widget.restaurant,
+          initialSelection: _selectedPreOrder,
+        ),
+      ),
+    );
+    if (result != null) {
+      setState(() => _selectedPreOrder = result);
     }
-    return total;
   }
+
+  double get _preOrderTotal =>
+      _selectedPreOrder.fold(0.0, (sum, item) => sum + item.subtotal);
 
   Future<void> _submit() async {
     if (_selectedDate == null || _selectedTime == null) {
@@ -69,9 +77,12 @@ class _ReservationScreenState extends State<ReservationScreen> {
     final timeStr =
         '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}:00';
 
-    final preOrderItems = _preOrderQuantities.entries
-        .where((e) => e.value > 0)
-        .map((e) => {'menu_item': e.key, 'quantity': e.value})
+    final preOrderItems = _selectedPreOrder
+        .map((item) => {
+              'menu_item': item.menuItem.id,
+              if (item.variant != null) 'variant': item.variant!.id,
+              'quantity': item.quantity,
+            })
         .toList();
 
     final result = await ReservationService.createReservation(
@@ -123,6 +134,7 @@ class _ReservationScreenState extends State<ReservationScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // --- Reservation Details: Date & Time ---
           const Text('Date & Time', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 8),
           Row(
@@ -148,8 +160,10 @@ class _ReservationScreenState extends State<ReservationScreen> {
               ),
             ],
           ),
+
+          // --- Number of Guests ---
           const SizedBox(height: 24),
-          const Text('Party Size', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const Text('Number of Guests', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -167,9 +181,69 @@ class _ReservationScreenState extends State<ReservationScreen> {
               ),
             ],
           ),
+
+          // --- Add Foods / Pre-Order button ---
           const SizedBox(height: 24),
-          const Text('Special Requests (optional)',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const Text('Add Foods / Pre-Order', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 4),
+          const Text(
+            'Order ahead so your food is ready when you arrive (optional).',
+            style: TextStyle(color: AppColors.textGrey, fontSize: 13),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.restaurant_menu),
+            label: Text(_selectedPreOrder.isEmpty ? 'Add Foods / Pre-Order' : 'Edit Pre-Order'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 46),
+            ),
+            onPressed: _openPreOrderSelection,
+          ),
+
+          // --- Selected Pre-Ordered Food Items ---
+          if (_selectedPreOrder.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text('Selected Pre-Ordered Food Items',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.cardBackground,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                children: [
+                  ..._selectedPreOrder.map((item) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text('${item.quantity}x ${item.displayName}',
+                                  style: const TextStyle(fontSize: 13)),
+                            ),
+                            Text('Rs. ${item.subtotal.toStringAsFixed(0)}',
+                                style: const TextStyle(fontSize: 13)),
+                          ],
+                        ),
+                      )),
+                  const Divider(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Pre-Order Total', style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text('Rs. ${_preOrderTotal.toStringAsFixed(0)}',
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // --- Special Requests ---
+          const SizedBox(height: 24),
+          const Text('Special Requests', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 8),
           TextField(
             controller: _requestsController,
@@ -179,71 +253,9 @@ class _ReservationScreenState extends State<ReservationScreen> {
             ),
             maxLines: 2,
           ),
+
+          // --- Request Reservation ---
           const SizedBox(height: 24),
-          const Text('Pre-Order Food (optional)',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 4),
-          const Text(
-            'Order ahead so your food is ready when you arrive.',
-            style: TextStyle(color: AppColors.textGrey, fontSize: 13),
-          ),
-          const SizedBox(height: 12),
-          if (widget.restaurant.categories.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text('No menu items available for pre-order.'),
-            )
-          else
-            ...widget.restaurant.categories.map((category) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12, bottom: 4),
-                    child: Text(category.name,
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
-                  ),
-                  ...category.menuItems.where((item) => item.isAvailable).map((item) {
-                    final qty = _preOrderQuantities[item.id] ?? 0;
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(item.name),
-                      subtitle: Text('Rs. ${item.price.toStringAsFixed(0)}'),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.remove_circle_outline),
-                            onPressed: qty > 0
-                                ? () => setState(() => _preOrderQuantities[item.id] = qty - 1)
-                                : null,
-                          ),
-                          Text('$qty'),
-                          IconButton(
-                            icon: const Icon(Icons.add_circle_outline),
-                            onPressed: () =>
-                                setState(() => _preOrderQuantities[item.id] = qty + 1),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                ],
-              );
-            }),
-          const SizedBox(height: 16),
-          if (_preOrderTotal > 0)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Pre-Order Total', style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text('Rs. ${_preOrderTotal.toStringAsFixed(0)}',
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                ],
-              ),
-            ),
           _submitting
               ? const Center(child: CircularProgressIndicator())
               : ElevatedButton(

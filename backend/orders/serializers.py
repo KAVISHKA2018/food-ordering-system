@@ -78,6 +78,17 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     def validate(self, data):
         if not data.get('items'):
             raise serializers.ValidationError("Order must contain at least one item.")
+
+        restaurant = data['restaurant']
+        order_type = data['order_type']
+
+        if order_type == Order.OrderType.DINE_IN and not restaurant.supports_dine_in:
+            raise serializers.ValidationError(f"{restaurant.name} does not offer dine-in.")
+        if order_type == Order.OrderType.TAKEAWAY and not restaurant.supports_takeaway:
+            raise serializers.ValidationError(f"{restaurant.name} does not offer takeaway.")
+        if order_type == Order.OrderType.DELIVERY and not restaurant.supports_delivery:
+            raise serializers.ValidationError(f"{restaurant.name} does not offer delivery.")
+
         if data['order_type'] == Order.OrderType.DELIVERY:
             if not data.get('delivery_address'):
                 raise serializers.ValidationError("Delivery address is required for delivery orders.")
@@ -164,14 +175,20 @@ class TableSessionSerializer(serializers.ModelSerializer):
     orders = OrderSerializer(many=True, read_only=True)
     restaurant_name = serializers.CharField(source='restaurant.name', read_only=True)
     customer_username = serializers.CharField(source='customer.username', read_only=True)
+    from_reservation = serializers.SerializerMethodField()
 
     class Meta:
         model = TableSession
         fields = [
             'id', 'restaurant', 'restaurant_name', 'customer', 'customer_username',
-            'table_number', 'status', 'total_amount', 'orders', 'created_at', 'updated_at'
+            'table_number', 'status', 'total_amount', 'orders', 'from_reservation',
+            'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'customer', 'total_amount', 'created_at', 'updated_at']
+
+    def get_from_reservation(self, obj):
+        reservation = obj.reservations.first()
+        return reservation.id if reservation else None
 
 
 class PaymentSerializer(serializers.ModelSerializer):

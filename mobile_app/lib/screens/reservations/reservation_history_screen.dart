@@ -74,6 +74,51 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
     }
   }
 
+  Widget? _paymentBadge(ReservationModel res) {
+    if (res.paymentStatus == 'N/A') return null;
+
+    Color color;
+    String label;
+    switch (res.paymentStatus) {
+      case 'PAID':
+        color = Colors.green;
+        label = 'Payment Confirmed';
+        break;
+      case 'PENDING_CONFIRMATION':
+        color = Colors.deepOrange;
+        label = 'Payment Submitted · Awaiting Confirmation';
+        break;
+      default:
+        color = Colors.grey;
+        label = 'Unpaid';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            res.paymentStatus == 'PAID'
+                ? Icons.check_circle
+                : res.paymentStatus == 'PENDING_CONFIRMATION'
+                    ? Icons.hourglass_top
+                    : Icons.info_outline,
+            size: 14,
+            color: color,
+          ),
+          const SizedBox(width: 6),
+          Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -131,8 +176,18 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
                     title: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('${_formatDate(res.reservationDate)} · ${_formatTime(res.reservationTime)}',
-                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (res.restaurantName.isNotEmpty)
+                                Text(res.restaurantName,
+                                    style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w600)),
+                              Text('${_formatDate(res.reservationDate)} · ${_formatTime(res.reservationTime)}',
+                                  style: const TextStyle(fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
@@ -151,10 +206,15 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
                       ],
                     ),
                     subtitle: Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        '${res.partySize} ${res.partySize == 1 ? 'guest' : 'guests'}',
-                        style: const TextStyle(color: AppColors.textGrey, fontSize: 13),
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Row(
+                        children: [
+                          Text(
+                            '${res.partySize} ${res.partySize == 1 ? 'guest' : 'guests'}'
+                            '${res.tableNumber.isNotEmpty ? " · Table ${res.tableNumber}" : ""}',
+                            style: const TextStyle(color: AppColors.textGrey, fontSize: 13),
+                          ),
+                        ],
                       ),
                     ),
                     children: [
@@ -185,14 +245,33 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  const Text('Pre-Order Total', style: TextStyle(fontWeight: FontWeight.bold)),
-                                  Text('Rs. ${res.preOrderTotal.toStringAsFixed(0)}',
-                                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  const Text('Pre-Order Subtotal'),
+                                  Text('Rs. ${res.preOrderTotal.toStringAsFixed(0)}'),
                                 ],
                               ),
                             ] else
                               const Text('No pre-order for this reservation.',
                                   style: TextStyle(color: AppColors.textGrey, fontSize: 13)),
+                                                        if (res.tableSession != null) ...[
+                              const SizedBox(height: 6),
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEEF7ED),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text('Current Table Bill',
+                                        style: TextStyle(fontWeight: FontWeight.bold)),
+                                    Text('Rs. ${res.currentBillTotal.toStringAsFixed(0)}',
+                                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            if (_paymentBadge(res) != null) _paymentBadge(res)!,
                             const SizedBox(height: 8),
                           ],
                         ),

@@ -18,6 +18,14 @@ class Restaurant(models.Model):
     opening_time = models.TimeField(null=True, blank=True)
     closing_time = models.TimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
+
+    is_active = models.BooleanField(default=True)
+    supports_dine_in = models.BooleanField(default=True)
+    supports_takeaway = models.BooleanField(default=True)
+    supports_delivery = models.BooleanField(default=True)
+    supports_reservations = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
