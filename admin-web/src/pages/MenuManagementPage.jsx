@@ -309,6 +309,11 @@ export default function MenuManagementPage() {
                         ) : (
                           `Rs. ${parseFloat(item.price).toFixed(0)}`
                         )}
+                        {item.average_rating && (
+                          <div style={styles.ratingBadge}>
+                            ★ {item.average_rating} ({item.review_count})
+                          </div>
+                        )}
                       </td>
                       <td style={styles.td}>
                         <label style={styles.toggle}>
@@ -582,4 +587,6 @@ const styles = {
   },
   priceDisabledNote: { color: '#8E8E8E', fontWeight: 400, fontSize: '11px' },
   inputDisabled: { backgroundColor: '#f5f5f5', color: '#aaa', cursor: 'not-allowed' },
+
+  ratingBadge: { fontSize: '11px', color: '#FFA000', marginTop: '2px', fontWeight: 600 },
 };

@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.db import transaction
 from .models import Order, OrderItem, TableSession, Payment
 from restaurants.models import MenuItem, MenuItemVariant
+from promotions.models import Promotion
 
 
 def normalize_table_number(value):
@@ -14,10 +15,15 @@ def normalize_table_number(value):
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
+    has_food_review = serializers.SerializerMethodField()
+
     class Meta:
         model = OrderItem
-        fields = ['id', 'menu_item', 'variant', 'item_name', 'variant_name', 'quantity', 'unit_price', 'subtotal']
+        fields = ['id', 'menu_item', 'variant', 'item_name', 'variant_name', 'quantity', 'unit_price', 'subtotal', 'has_food_review']
         read_only_fields = ['id', 'item_name', 'variant_name', 'unit_price', 'subtotal']
+
+    def get_has_food_review(self, obj):
+        return hasattr(obj, 'review')
 
 
 class OrderItemCreateSerializer(serializers.Serializer):
@@ -27,26 +33,30 @@ class OrderItemCreateSerializer(serializers.Serializer):
     )
     quantity = serializers.IntegerField(min_value=1)
 
-
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     customer_username = serializers.CharField(source='customer.username', read_only=True)
     restaurant_name = serializers.CharField(source='restaurant.name', read_only=True)
     table_number = serializers.SerializerMethodField()
     payment_status = serializers.SerializerMethodField()
+    promotion_title = serializers.CharField(source='promotion.title', read_only=True, default=None)
+    has_review = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
         fields = [
-            'id', 'customer', 'customer_username', 'restaurant', 'restaurant_name',
-            'table_session', 'table_number', 'order_type', 'status',
-            'delivery_address', 'contact_phone', 'total_amount', 'notes',
-            'payment_status', 'items', 'created_at', 'updated_at'
+            'id', 'customer', 'customer_username', 'restaurant', 'restaurant_name', 'table_session', 'table_number',
+            'order_type', 'status', 'delivery_address', 'contact_phone',
+            'subtotal_amount', 'discount_amount', 'promotion', 'promotion_title', 'total_amount', 'notes',
+            'payment_status', 'has_review', 'items', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'customer', 'total_amount', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'customer', 'subtotal_amount', 'discount_amount', 'total_amount', 'created_at', 'updated_at']
 
     def get_table_number(self, obj):
         return obj.table_session.table_number if obj.table_session else None
+
+    def get_has_review(self, obj):
+        return hasattr(obj, 'review')
 
     def get_payment_status(self, obj):
         if obj.order_type == Order.OrderType.DINE_IN and obj.table_session:
@@ -65,14 +75,14 @@ class OrderSerializer(serializers.ModelSerializer):
             return mapping.get(obj.status, 'PAID')
         return 'N/A'
 
-
 class OrderCreateSerializer(serializers.ModelSerializer):
     items = OrderItemCreateSerializer(many=True, write_only=True)
     table_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    promo_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = Order
-        fields = ['id', 'restaurant', 'order_type', 'delivery_address', 'contact_phone', 'notes', 'items', 'table_number']
+        fields = ['id', 'restaurant', 'order_type', 'delivery_address', 'contact_phone', 'notes', 'items', 'table_number', 'promo_code']
         read_only_fields = ['id']
 
     def validate(self, data):
@@ -89,12 +99,12 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         if order_type == Order.OrderType.DELIVERY and not restaurant.supports_delivery:
             raise serializers.ValidationError(f"{restaurant.name} does not offer delivery.")
 
-        if data['order_type'] == Order.OrderType.DELIVERY:
+        if order_type == Order.OrderType.DELIVERY:
             if not data.get('delivery_address'):
                 raise serializers.ValidationError("Delivery address is required for delivery orders.")
             if not data.get('contact_phone'):
                 raise serializers.ValidationError("Contact phone is required for delivery orders.")
-        if data['order_type'] == Order.OrderType.DINE_IN and not (data.get('table_number') or '').strip():
+        if order_type == Order.OrderType.DINE_IN and not (data.get('table_number') or '').strip():
             raise serializers.ValidationError("Table number is required for dine-in orders.")
         return data
 
@@ -102,6 +112,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         items_data = validated_data.pop('items')
         table_number = normalize_table_number(validated_data.pop('table_number', ''))
+        promo_code = (validated_data.pop('promo_code', '') or '').strip()
         customer = self.context['request'].user
 
         table_session = None
@@ -116,7 +127,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
 
         order = Order.objects.create(customer=customer, table_session=table_session, **validated_data)
 
-        total = 0
+        subtotal = 0
         for item_data in items_data:
             menu_item = item_data['menu_item']
             variant = item_data.get('variant')
@@ -124,14 +135,10 @@ class OrderCreateSerializer(serializers.ModelSerializer):
 
             if not menu_item.is_available:
                 raise serializers.ValidationError(f"'{menu_item.name}' is currently unavailable.")
-
             if variant and variant.menu_item_id != menu_item.id:
-                raise serializers.ValidationError(
-                    f"Selected size does not belong to '{menu_item.name}'."
-                )
+                raise serializers.ValidationError(f"Selected size does not belong to '{menu_item.name}'.")
 
             unit_price = variant.price if variant else menu_item.price
-
             if not variant and menu_item.stock_quantity < quantity:
                 raise serializers.ValidationError(
                     f"Not enough stock for '{menu_item.name}'. Available: {menu_item.stock_quantity}"
@@ -146,22 +153,37 @@ class OrderCreateSerializer(serializers.ModelSerializer):
                 quantity=quantity,
                 unit_price=unit_price,
             )
-            total += order_item.subtotal
+            subtotal += order_item.subtotal
 
             if not variant:
                 menu_item.stock_quantity -= quantity
                 menu_item.save()
 
-        order.total_amount = total
+        discount = 0
+        promotion = None
+        if promo_code:
+            promotion = Promotion.objects.filter(
+                restaurant=order.restaurant, code__iexact=promo_code
+            ).first()
+            if not promotion or not promotion.is_valid_now():
+                raise serializers.ValidationError("This promo code is invalid or expired.")
+            if subtotal < promotion.min_order_amount:
+                raise serializers.ValidationError(
+                    f"Minimum order of Rs. {promotion.min_order_amount} required for this code."
+                )
+            discount = promotion.calculate_discount(subtotal)
+            promotion.used_count += 1
+            promotion.save()
+
+        order.subtotal_amount = subtotal
+        order.discount_amount = discount
+        order.total_amount = subtotal - discount
+        order.promotion = promotion
 
         if order.order_type == Order.OrderType.TAKEAWAY:
-            # This endpoint is now only called by the app AFTER the customer
-            # taps "Pay Now" on the payment screen — so by the time we reach
-            # here, payment has already been requested. Record it as pending
-            # the restaurant's cash confirmation, same as before.
             Payment.objects.create(
                 order=order,
-                amount=total,
+                amount=order.total_amount,
                 method=Payment.Method.MOCK,
                 status=Payment.Status.PENDING,
             )

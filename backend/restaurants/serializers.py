@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Restaurant, Category, MenuItem, MenuItemVariant
+from django.db.models import Avg
 
 
 class MenuItemVariantSerializer(serializers.ModelSerializer):
@@ -11,15 +12,25 @@ class MenuItemVariantSerializer(serializers.ModelSerializer):
 
 class MenuItemSerializer(serializers.ModelSerializer):
     variants = MenuItemVariantSerializer(many=True, read_only=True)
+    average_rating = serializers.SerializerMethodField()
+    review_count = serializers.SerializerMethodField()
 
     class Meta:
         model = MenuItem
         fields = [
             'id', 'restaurant', 'category', 'name', 'description',
             'price', 'image', 'is_available', 'is_vegetarian',
-            'stock_quantity', 'variants', 'created_at', 'updated_at'
+            'stock_quantity', 'variants', 'average_rating', 'review_count',
+            'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_average_rating(self, obj):
+        avg = obj.food_reviews.aggregate(avg=Avg('rating'))['avg']
+        return round(avg, 1) if avg else None
+
+    def get_review_count(self, obj):
+        return obj.food_reviews.count()
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -32,6 +43,9 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class RestaurantSerializer(serializers.ModelSerializer):
+    average_rating = serializers.SerializerMethodField()
+    review_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Restaurant
         fields = [
@@ -39,9 +53,17 @@ class RestaurantSerializer(serializers.ModelSerializer):
             'phone_number', 'email', 'logo', 'cover_image',
             'opening_time', 'closing_time', 'is_active',
             'supports_dine_in', 'supports_takeaway', 'supports_delivery', 'supports_reservations',
+            'average_rating', 'review_count',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'owner', 'created_at', 'updated_at']
+
+    def get_average_rating(self, obj):
+        avg = obj.reviews.aggregate(avg=Avg('rating'))['avg']
+        return round(avg, 1) if avg else None
+
+    def get_review_count(self, obj):
+        return obj.reviews.count()
 
     def update(self, instance, validated_data):
         request = self.context.get('request')

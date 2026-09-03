@@ -36,6 +36,8 @@ class RestaurantModel {
   final bool supportsDelivery;
   final bool supportsReservations;
   final List<CategoryModel> categories;
+  final double? averageRating;
+  final int reviewCount;
 
   RestaurantModel({
     required this.id,
@@ -51,6 +53,8 @@ class RestaurantModel {
     this.supportsDelivery = true,
     this.supportsReservations = true,
     this.categories = const [],
+    this.averageRating,
+    this.reviewCount = 0,
   });
 
   factory RestaurantModel.fromJson(Map<String, dynamic> json) {
@@ -72,6 +76,8 @@ class RestaurantModel {
               .map((cat) => CategoryModel.fromJson(cat))
               .toList()
           : [],
+      averageRating: json['average_rating'] != null ? double.parse(json['average_rating'].toString()) : null,
+      reviewCount: json['review_count'] ?? 0,
     );
   }
 }

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../config/app_theme.dart';
 import '../../models/order_model.dart';
 import '../../services/order_service.dart';
+import '../../services/review_service.dart';
+import 'food_review_screen.dart';
 
 class OrderHistoryScreen extends StatefulWidget {
   const OrderHistoryScreen({super.key});
@@ -110,6 +112,93 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
         label,
         style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 11),
       ),
+    );
+  }
+
+  Future<void> _showRatingDialog(OrderModel order) async {
+    int selectedRating = 5;
+    final commentController = TextEditingController();
+    bool submitting = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('Rate your order at ${order.restaurantName}'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(5, (index) {
+                      final starValue = index + 1;
+                      return IconButton(
+                        icon: Icon(
+                          starValue <= selectedRating ? Icons.star : Icons.star_border,
+                          color: Colors.amber,
+                          size: 32,
+                        ),
+                        onPressed: () => setDialogState(() => selectedRating = starValue),
+                      );
+                    }),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: commentController,
+                    decoration: const InputDecoration(
+                      hintText: 'Share your experience (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 3,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                submitting
+                    ? const Padding(
+                        padding: EdgeInsets.all(8.0),
+                        child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                      )
+                    : ElevatedButton(
+                        onPressed: () async {
+                          setDialogState(() => submitting = true);
+                          final result = await ReviewService.submitReview(
+                            orderId: order.id,
+                            rating: selectedRating,
+                            comment: commentController.text.trim(),
+                          );
+                          if (!mounted) return;
+                          Navigator.pop(dialogContext);
+                          if (result['success']) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Thanks for your review!')),
+                            );
+                            // Step 2: immediately move into rating the individual food items.
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => FoodReviewScreen(order: order)),
+                            );
+                            _refresh();
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(result['error'].toString())),
+                            );
+                          }
+                        },
+                        child: const Text('Submit'),
+                      ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -257,6 +346,43 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                               ],
                             ),
                             _paymentBadge(order),
+                            if (order.status == 'COMPLETED' && !order.hasReview) ...[
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.star_border, size: 18),
+                                  label: const Text('Rate this order'),
+                                  onPressed: () => _showRatingDialog(order),
+                                ),
+                              ),
+                            ] else if (order.status == 'COMPLETED' && order.hasReview) ...[
+                              const SizedBox(height: 10),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                                ),
+                                child: const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.star, size: 16, color: Colors.green),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'Reviewed',
+                                      style: TextStyle(
+                                        color: Colors.green,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 8),
                           ],
                         ),

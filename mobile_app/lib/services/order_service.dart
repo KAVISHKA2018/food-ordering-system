@@ -12,6 +12,7 @@ class OrderService {
     String contactPhone = '',
     String tableNumber = '',
     String notes = '',
+    String promoCode = '',
   }) async {
     final body = {
       'restaurant': restaurantId,
@@ -23,6 +24,9 @@ class OrderService {
     };
     if (orderType == 'DINE_IN') {
       body['table_number'] = tableNumber;
+    }
+    if (promoCode.trim().isNotEmpty) {
+      body['promo_code'] = promoCode.trim();
     }
 
     final response = await ApiService.post(

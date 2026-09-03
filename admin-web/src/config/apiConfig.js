@@ -13,6 +13,9 @@ export const API_CONFIG = {
   orders: `${BASE_URL}/orders/`,
   tableSessions: `${BASE_URL}/table-sessions/`,
   reservations: `${BASE_URL}/reservations/`,
+  promotions: `${BASE_URL}/promotions/`,
+  reviews: `${BASE_URL}/reviews/`,
+  foodReviews: `${BASE_URL}/food-reviews/`,
 };
 
 export function imageUrl(path) {

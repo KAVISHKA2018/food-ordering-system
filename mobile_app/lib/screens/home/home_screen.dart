@@ -11,6 +11,9 @@ import '../reservations/reservation_history_screen.dart';
 import '../profile/profile_screen.dart';
 import '../scan/qr_scanner_screen.dart';
 
+import '../../models/promotion_model.dart';
+import '../../services/promotion_service.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -20,16 +23,19 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late Future<List<RestaurantModel>> _restaurantsFuture;
+  late Future<List<PromotionModel>> _promotionsFuture;
 
   @override
   void initState() {
     super.initState();
     _restaurantsFuture = RestaurantService.getRestaurants();
+    _promotionsFuture = PromotionService.getActivePromotions();
   }
 
   Future<void> _refresh() async {
     setState(() {
       _restaurantsFuture = RestaurantService.getRestaurants();
+      _promotionsFuture = PromotionService.getActivePromotions();
     });
   }
 
@@ -44,6 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
               SliverToBoxAdapter(child: _buildHeader()),
               SliverToBoxAdapter(child: _buildSearchBar()),
               SliverToBoxAdapter(child: _buildScanBanner()),
+              SliverToBoxAdapter(child: _buildPromotionsBanner()),
               SliverToBoxAdapter(child: _buildSectionTitle('Restaurants')),
               _buildRestaurantList(),
             ],
@@ -172,6 +179,108 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+    Widget _buildPromotionsBanner() {
+    return FutureBuilder<List<PromotionModel>>(
+      future: _promotionsFuture,
+      builder: (context, snapshot) {
+        final promos = snapshot.data ?? [];
+        if (promos.isEmpty) return const SizedBox.shrink();
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: SizedBox(
+            height: 140,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: promos.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final promo = promos[index];
+                final imgUrl = ApiConfig.imageUrl(promo.image);
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => RestaurantDetailScreen(restaurantId: promo.restaurantId),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    width: 260,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      color: AppColors.primary,
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (imgUrl.isNotEmpty)
+                          CachedNetworkImage(
+                            imageUrl: imgUrl,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => Container(color: AppColors.primary),
+                          ),
+                        Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [Colors.transparent, Colors.black.withValues(alpha: 0.65)],
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          left: 14,
+                          right: 14,
+                          bottom: 12,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  promo.discountLabel,
+                                  style: const TextStyle(
+                                      color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                promo.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                              ),
+                              if (promo.restaurantName.isNotEmpty)
+                                Text(
+                                  promo.restaurantName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildSectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
@@ -277,6 +386,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(color: AppColors.textGrey, fontSize: 13),
                     ),
+                    if (restaurant.averageRating != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.star, size: 14, color: Colors.amber),
+                          const SizedBox(width: 3),
+                          Text(
+                            '${restaurant.averageRating!.toStringAsFixed(1)} (${restaurant.reviewCount})',
+                            style: const TextStyle(fontSize: 12, color: AppColors.textGrey, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),

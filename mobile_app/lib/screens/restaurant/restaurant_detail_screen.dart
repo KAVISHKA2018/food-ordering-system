@@ -413,9 +413,28 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                       ),
                       const SizedBox(width: 14),
                       Expanded(
-                        child: Text(
-                          restaurant.name,
-                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              restaurant.name,
+                              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                            ),
+                            if (restaurant.averageRating != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.star, size: 16, color: Colors.amber),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${restaurant.averageRating!.toStringAsFixed(1)} (${restaurant.reviewCount} reviews)',
+                                      style: const TextStyle(fontSize: 13, color: AppColors.textGrey),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ],

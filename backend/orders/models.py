@@ -74,6 +74,13 @@ class Order(models.Model):
     
     order_type = models.CharField(max_length=20, choices=OrderType.choices)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    subtotal_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    promotion = models.ForeignKey(
+        'promotions.Promotion', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='orders'
+    )
     delivery_address = models.CharField(max_length=255, blank=True)
     contact_phone = models.CharField(max_length=20, blank=True)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)

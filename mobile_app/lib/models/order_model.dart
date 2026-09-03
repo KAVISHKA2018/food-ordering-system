@@ -7,6 +7,7 @@ class OrderItemModel {
   final int quantity;
   final double unitPrice;
   final double subtotal;
+  final bool hasFoodReview;
 
   OrderItemModel({
     this.id,
@@ -17,6 +18,7 @@ class OrderItemModel {
     required this.quantity,
     required this.unitPrice,
     required this.subtotal,
+    this.hasFoodReview = false,
   });
 
   String get displayName =>
@@ -32,6 +34,7 @@ class OrderItemModel {
       quantity: json['quantity'],
       unitPrice: double.parse(json['unit_price'].toString()),
       subtotal: double.parse(json['subtotal'].toString()),
+      hasFoodReview: json['has_food_review'] ?? false,
     );
   }
 }
@@ -47,8 +50,12 @@ class OrderModel {
   final String? tableNumber;
   final String paymentStatus;
   final double totalAmount;
+  final double subtotalAmount;
+  final double discountAmount;
+  final String? promotionTitle;
   final String notes;
   final List<OrderItemModel> items;
+  final bool hasReview;
   final String createdAt;
 
   OrderModel({
@@ -61,9 +68,13 @@ class OrderModel {
     this.contactPhone = '',
     this.tableNumber,
     this.paymentStatus = 'N/A',
+    required this.subtotalAmount,
+    required this.discountAmount,
+    this.promotionTitle,
     required this.totalAmount,
     required this.notes,
     required this.items,
+    required this.hasReview,
     required this.createdAt,
   });
 
@@ -79,10 +90,18 @@ class OrderModel {
       tableNumber: json['table_number'],
       paymentStatus: json['payment_status'] ?? 'N/A',
       totalAmount: double.parse(json['total_amount'].toString()),
+      subtotalAmount: json['subtotal_amount'] != null
+          ? double.parse(json['subtotal_amount'].toString())
+          : double.parse(json['total_amount'].toString()),
+      discountAmount: json['discount_amount'] != null
+          ? double.parse(json['discount_amount'].toString())
+          : 0,
+      promotionTitle: json['promotion_title'],
       notes: json['notes'] ?? '',
       items: (json['items'] as List<dynamic>? ?? [])
           .map((i) => OrderItemModel.fromJson(i))
           .toList(),
+      hasReview: json['has_review'] ?? false,
       createdAt: json['created_at'] ?? '',
     );
   }

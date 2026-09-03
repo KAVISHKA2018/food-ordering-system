@@ -4,19 +4,20 @@ import '../../config/app_theme.dart';
 import '../../providers/cart_provider.dart';
 import '../../services/order_service.dart';
 
-/// Order is NOT created until the customer taps "Pay Now" here.
-/// Backing out of this screen (device back, AppBar back, etc.) creates
-/// nothing — the cart stays intact so the customer can try again.
 class TakeawayPaymentScreen extends StatefulWidget {
   final int restaurantId;
   final String restaurantName;
   final String notes;
+  final String promoCode;
+  final double discountAmount;
 
   const TakeawayPaymentScreen({
     super.key,
     required this.restaurantId,
     required this.restaurantName,
     this.notes = '',
+    this.promoCode = '',
+    this.discountAmount = 0,
   });
 
   @override
@@ -44,6 +45,7 @@ class _TakeawayPaymentScreenState extends State<TakeawayPaymentScreen> {
       orderType: 'TAKEAWAY',
       items: items,
       notes: widget.notes,
+      promoCode: widget.promoCode,
     );
 
     setState(() => _paying = false);
@@ -123,9 +125,28 @@ class _TakeawayPaymentScreenState extends State<TakeawayPaymentScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
+                          const Text('Subtotal', style: TextStyle(fontSize: 14)),
+                          Text('Rs. ${cart.totalAmount.toStringAsFixed(0)}', style: const TextStyle(fontSize: 14)),
+                        ],
+                      ),
+                      if (widget.discountAmount > 0) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Discount', style: TextStyle(fontSize: 14, color: Colors.green)),
+                            Text('-Rs. ${widget.discountAmount.toStringAsFixed(0)}',
+                                style: const TextStyle(fontSize: 14, color: Colors.green)),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
                           const Text('Total to Pay',
                               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                          Text('Rs. ${cart.totalAmount.toStringAsFixed(0)}',
+                          Text('Rs. ${(cart.totalAmount - widget.discountAmount).toStringAsFixed(0)}',
                               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                         ],
                       ),
@@ -158,7 +179,7 @@ class _TakeawayPaymentScreenState extends State<TakeawayPaymentScreen> {
                               minimumSize: const Size(double.infinity, 0),
                             ),
                             child: Text(
-                              'Pay Now (Rs. ${cart.totalAmount.toStringAsFixed(0)})',
+                              'Pay Now (Rs. ${(cart.totalAmount - widget.discountAmount).toStringAsFixed(0)})',
                               style: const TextStyle(fontSize: 16),
                             ),
                           ),

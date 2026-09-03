@@ -7,6 +7,7 @@ import '../../services/order_service.dart';
 import '../../utils/table_number_utils.dart';
 import '../checkout/delivery_details_screen.dart';
 import '../checkout/takeaway_payment_screen.dart';
+import '../../services/promotion_service.dart';
 
 class CartScreen extends StatefulWidget {
   final RestaurantModel? restaurant;
@@ -25,11 +26,17 @@ class _CartScreenState extends State<CartScreen> {
   bool _placing = false;
   bool _initializedFromCart = false;
   bool _isTableFlow = false;
+  final _promoCodeController = TextEditingController();
+  String? _appliedPromoCode;
+  double _discountAmount = 0;
+  String? _promoTitle;
+  bool _validatingPromo = false;
 
   @override
   void dispose() {
     _tableNumberController.dispose();
     _notesController.dispose();
+    _promoCodeController.dispose();
     super.dispose();
   }
 
@@ -45,6 +52,47 @@ class _CartScreenState extends State<CartScreen> {
       types['DELIVERY'] = 'Delivery';
     }
     return types;
+  }
+
+    Future<void> _applyPromoCode(CartProvider cart) async {
+    final code = _promoCodeController.text.trim();
+    if (code.isEmpty) return;
+
+    setState(() => _validatingPromo = true);
+    final result = await PromotionService.validateCode(
+      restaurantId: cart.restaurantId!,
+      code: code,
+      subtotal: cart.totalAmount,
+    );
+    setState(() => _validatingPromo = false);
+
+    if (result['success']) {
+      setState(() {
+        _appliedPromoCode = code;
+        _discountAmount = double.parse(result['discount_amount'].toString());
+        _promoTitle = result['title'];
+      });
+    } else {
+      setState(() {
+        _appliedPromoCode = null;
+        _discountAmount = 0;
+        _promoTitle = null;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['error'].toString())),
+        );
+      }
+    }
+  }
+
+  void _removePromoCode() {
+    setState(() {
+      _appliedPromoCode = null;
+      _discountAmount = 0;
+      _promoTitle = null;
+      _promoCodeController.clear();
+    });
   }
 
   Future<void> _handleSelectOrderType(String type) async {
@@ -103,6 +151,7 @@ class _CartScreenState extends State<CartScreen> {
       contactPhone: _contactPhone,
       tableNumber: normalizedTable,
       notes: _notesController.text.trim(),
+      promoCode: _appliedPromoCode ?? '',
     );
 
     setState(() => _placing = false);
@@ -135,6 +184,8 @@ class _CartScreenState extends State<CartScreen> {
           restaurantId: cart.restaurantId!,
           restaurantName: cart.restaurantName ?? 'Restaurant',
           notes: _notesController.text.trim(),
+          promoCode: _appliedPromoCode ?? '',
+          discountAmount: _discountAmount,
         ),
       ),
     );
@@ -326,15 +377,85 @@ class _CartScreenState extends State<CartScreen> {
                       ),
                       maxLines: 2,
                     ),
-                    const SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                const SizedBox(height: 16),
+                const Text('Promo Code', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                if (_appliedPromoCode != null)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEEF7ED),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
                       children: [
-                        const Text('Total', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                        Text('Rs. ${cart.totalAmount.toStringAsFixed(0)}',
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                        const Icon(Icons.local_offer, color: Colors.green, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${_promoTitle ?? _appliedPromoCode} applied (-Rs. ${_discountAmount.toStringAsFixed(0)})',
+                            style: const TextStyle(fontSize: 13, color: Colors.green, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: _removePromoCode,
+                        ),
                       ],
                     ),
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _promoCodeController,
+                          textCapitalization: TextCapitalization.characters,
+                          decoration: const InputDecoration(
+                            hintText: 'Enter promo code',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _validatingPromo
+                          ? const SizedBox(
+                              width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          : TextButton(
+                              onPressed: () => _applyPromoCode(cart),
+                              child: const Text('Apply'),
+                            ),
+                    ],
+                  ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Subtotal', style: TextStyle(fontSize: 14)),
+                    Text('Rs. ${cart.totalAmount.toStringAsFixed(0)}', style: const TextStyle(fontSize: 14)),
+                  ],
+                ),
+                if (_discountAmount > 0) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Discount', style: TextStyle(fontSize: 14, color: Colors.green)),
+                      Text('-Rs. ${_discountAmount.toStringAsFixed(0)}',
+                          style: const TextStyle(fontSize: 14, color: Colors.green)),
+                    ],
+                  ),
+                ],
+                const Divider(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Total', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text('Rs. ${(cart.totalAmount - _discountAmount).toStringAsFixed(0)}',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  ],
+                ),
                     const SizedBox(height: 16),
                     _placing
                         ? const Center(child: CircularProgressIndicator())

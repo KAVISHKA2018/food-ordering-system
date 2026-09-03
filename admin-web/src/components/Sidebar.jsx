@@ -54,6 +54,8 @@ export default function Sidebar() {
           <NavLink to="/orders" style={linkStyle}>Orders</NavLink>
           <NavLink to="/reservations" style={linkStyle}>Reservations</NavLink>
           <NavLink to="/tables" style={linkStyle}>Tables</NavLink>
+          <NavLink to="/promotions" style={linkStyle}>Promotions</NavLink>
+          <NavLink to="/reviews" style={linkStyle}>Reviews</NavLink>
         </nav>
       </div>
 

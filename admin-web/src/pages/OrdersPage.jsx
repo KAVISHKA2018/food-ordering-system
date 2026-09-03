@@ -176,6 +176,22 @@ export default function OrdersPage() {
 
                   {order.notes && <p style={styles.smallNote}>📝 {order.notes}</p>}
 
+                  {order.promotion_title && (
+                    <p style={styles.promoNote}>🏷️ {order.promotion_title}</p>
+                  )}
+
+                  <div style={styles.itemRow}>
+                    <span>Subtotal</span>
+                    <span>Rs. {parseFloat(order.subtotal_amount ?? order.total_amount).toFixed(0)}</span>
+                  </div>
+
+                  {parseFloat(order.discount_amount) > 0 && (
+                    <div style={{ ...styles.itemRow, color: '#4CAF50' }}>
+                      <span>Discount</span>
+                      <span>-Rs. {parseFloat(order.discount_amount).toFixed(0)}</span>
+                    </div>
+                  )}
+
                   <div style={styles.totalRow}>
                     <strong>Total</strong>
                     <strong>Rs. {parseFloat(order.total_amount).toFixed(0)}</strong>
@@ -263,5 +279,8 @@ const styles = {
   confirmPaymentBtn: {
     width: '100%', padding: '10px', backgroundColor: '#FB8C00', color: '#fff', border: 'none',
     borderRadius: '8px', cursor: 'pointer', fontSize: '13px', marginTop: '10px', fontWeight: 600,
+  },
+  promoNote: {
+    fontSize: '12px', color: '#E8865A', margin: '6px 0', fontWeight: 600,
   },
 };
