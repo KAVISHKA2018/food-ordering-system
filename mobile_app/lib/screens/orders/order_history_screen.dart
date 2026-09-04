@@ -5,6 +5,15 @@ import '../../services/order_service.dart';
 import '../../services/review_service.dart';
 import 'food_review_screen.dart';
 
+import 'package:provider/provider.dart';
+import '../../services/restaurant_service.dart';
+import '../../providers/cart_provider.dart';
+import '../cart/cart_screen.dart';
+
+import '../../models/menu_item_model.dart';
+
+
+
 class OrderHistoryScreen extends StatefulWidget {
   const OrderHistoryScreen({super.key});
 
@@ -13,7 +22,77 @@ class OrderHistoryScreen extends StatefulWidget {
 }
 
 class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
+
   late Future<List<OrderModel>> _ordersFuture;
+  int? _reorderingOrderId;
+
+  Future<void> _orderAgain(OrderModel order) async {
+    setState(() => _reorderingOrderId = order.id);
+
+    try {
+      final restaurant = await RestaurantService.getRestaurantDetail(order.restaurantId);
+
+      final Map<int, MenuItemModel> allMenuItems = {};
+      for (final category in restaurant.categories) {
+        for (final item in category.menuItems) {
+          allMenuItems[item.id] = item;
+        }
+      }
+
+      final cart = Provider.of<CartProvider>(context, listen: false);
+      int addedCount = 0;
+      int skippedCount = 0;
+
+      for (final orderItem in order.items) {
+        final menuItem = allMenuItems[orderItem.menuItemId];
+        if (menuItem == null || !menuItem.isAvailable) {
+          skippedCount++;
+          continue;
+        }
+
+      MenuItemVariantModel? variant;
+        if (orderItem.variantId != null) {
+          variant = menuItem.variants.where((v) => v.id == orderItem.variantId).firstOrNull;
+          if (variant == null) {
+            skippedCount++;
+            continue;
+          }
+        }
+
+        for (int i = 0; i < orderItem.quantity; i++) {
+          cart.addItem(menuItem, restaurant.id, restaurant.name, variant: variant);
+        }
+        addedCount++;
+      }
+
+      if (!mounted) return;
+      setState(() => _reorderingOrderId = null);
+
+      if (addedCount == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('None of these items are available anymore.')),
+        );
+        return;
+      }
+
+      if (skippedCount > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$skippedCount item(s) are no longer available and were skipped.')),
+        );
+      }
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => CartScreen(restaurant: restaurant)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _reorderingOrderId = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not reorder: $e')),
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -346,6 +425,25 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                               ],
                             ),
                             _paymentBadge(order),
+                            if (order.status == 'COMPLETED') ...[
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  icon: _reorderingOrderId == order.id
+                                      ? const SizedBox(
+                                          width: 16, height: 16,
+                                          child: CircularProgressIndicator(strokeWidth: 2))
+                                      : const Icon(Icons.replay, size: 18),
+                                  label: Text(
+                                    _reorderingOrderId == order.id ? 'Adding to cart...' : 'Order Again',
+                                  ),
+                                  onPressed: _reorderingOrderId == order.id
+                                      ? null
+                                      : () => _orderAgain(order),
+                                ),
+                              ),
+                            ],
                             if (order.status == 'COMPLETED' && !order.hasReview) ...[
                               const SizedBox(height: 10),
                               SizedBox(
@@ -397,4 +495,8 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
       ),
     );
   }
+}
+
+extension _FirstOrNull<T> on Iterable<T> {
+  T? get firstOrNull => isEmpty ? null : first;
 }

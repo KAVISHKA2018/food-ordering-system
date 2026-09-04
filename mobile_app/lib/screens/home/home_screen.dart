@@ -14,6 +14,13 @@ import '../scan/qr_scanner_screen.dart';
 import '../../models/promotion_model.dart';
 import '../../services/promotion_service.dart';
 
+import '../../models/menu_item_model.dart';
+import '../../services/recommendation_service.dart';
+
+import 'package:provider/provider.dart';
+import '../../providers/cart_provider.dart';
+import '../restaurant/food_detail_sheet.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -24,19 +31,36 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late Future<List<RestaurantModel>> _restaurantsFuture;
   late Future<List<PromotionModel>> _promotionsFuture;
+  late Future<List<MenuItemModel>> _recommendationsFuture;
 
   @override
   void initState() {
     super.initState();
     _restaurantsFuture = RestaurantService.getRestaurants();
     _promotionsFuture = PromotionService.getActivePromotions();
+    _recommendationsFuture = RecommendationService.getForMe();
   }
 
   Future<void> _refresh() async {
     setState(() {
       _restaurantsFuture = RestaurantService.getRestaurants();
       _promotionsFuture = PromotionService.getActivePromotions();
+      _recommendationsFuture = RecommendationService.getForMe();
     });
+  }
+
+  Future<void> _openRecommendedItem(MenuItemModel item) async {
+    try {
+      final restaurant = await RestaurantService.getRestaurantDetail(item.restaurantId);
+      if (!mounted) return;
+      final cart = Provider.of<CartProvider>(context, listen: false);
+      showFoodDetailSheet(context: context, item: item, restaurant: restaurant, cart: cart);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not load this item: $e')),
+      );
+    }
   }
 
   @override
@@ -51,6 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
               SliverToBoxAdapter(child: _buildSearchBar()),
               SliverToBoxAdapter(child: _buildScanBanner()),
               SliverToBoxAdapter(child: _buildPromotionsBanner()),
+              SliverToBoxAdapter(child: _buildRecommendations()),
               SliverToBoxAdapter(child: _buildSectionTitle('Restaurants')),
               _buildRestaurantList(),
             ],
@@ -280,6 +305,99 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
   }
+
+  Widget _buildRecommendations() {
+    return FutureBuilder<List<MenuItemModel>>(
+      future: _recommendationsFuture,
+      builder: (context, snapshot) {
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionTitle('Recommended for You'),
+            SizedBox(
+              height: 170,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  final imgUrl = ApiConfig.imageUrl(item.image);
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => RestaurantDetailScreen(
+                            restaurantId: item.restaurantId,
+                            initialItemId: item.id,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: 150,
+                      decoration: BoxDecoration(
+                        color: AppColors.cardBackground,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          AspectRatio(
+                            aspectRatio: 1.4,
+                            child: imgUrl.isNotEmpty
+                                ? CachedNetworkImage(
+                                    imageUrl: imgUrl,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, __, ___) => Container(
+                                      color: AppColors.primary.withValues(alpha: 0.15),
+                                      child: const Icon(Icons.fastfood, color: AppColors.primary),
+                                    ),
+                                  )
+                                : Container(
+                                    color: AppColors.primary.withValues(alpha: 0.15),
+                                    child: const Icon(Icons.fastfood, color: AppColors.primary),
+                                  ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Rs. ${item.price.toStringAsFixed(0)}',
+                                  style: const TextStyle(
+                                      color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
 
   Widget _buildSectionTitle(String title) {
     return Padding(

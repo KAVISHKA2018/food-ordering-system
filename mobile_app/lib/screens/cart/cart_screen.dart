@@ -4,10 +4,9 @@ import '../../config/app_theme.dart';
 import '../../models/restaurant_model.dart';
 import '../../providers/cart_provider.dart';
 import '../../services/order_service.dart';
-import '../../utils/table_number_utils.dart';
-import '../checkout/delivery_details_screen.dart';
-import '../checkout/takeaway_payment_screen.dart';
 import '../../services/promotion_service.dart';
+import '../../utils/table_number_utils.dart';
+import '../checkout/takeaway_payment_screen.dart';
 
 class CartScreen extends StatefulWidget {
   final RestaurantModel? restaurant;
@@ -19,14 +18,16 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> {
   String _orderType = 'TAKEAWAY';
-  String _deliveryAddress = '';
-  String _contactPhone = '';
   final _tableNumberController = TextEditingController();
+  final _deliveryAddressController = TextEditingController();
+  final _contactPhoneController = TextEditingController();
   final _notesController = TextEditingController();
+  final _promoCodeController = TextEditingController();
+
   bool _placing = false;
   bool _initializedFromCart = false;
   bool _isTableFlow = false;
-  final _promoCodeController = TextEditingController();
+
   String? _appliedPromoCode;
   double _discountAmount = 0;
   String? _promoTitle;
@@ -35,6 +36,8 @@ class _CartScreenState extends State<CartScreen> {
   @override
   void dispose() {
     _tableNumberController.dispose();
+    _deliveryAddressController.dispose();
+    _contactPhoneController.dispose();
     _notesController.dispose();
     _promoCodeController.dispose();
     super.dispose();
@@ -46,15 +49,13 @@ class _CartScreenState extends State<CartScreen> {
 
     if (r?.supportsDineIn ?? true) types['DINE_IN'] = 'Dine In';
     if (r?.supportsTakeaway ?? true) types['TAKEAWAY'] = 'Takeaway';
-    // Delivery is never offered on a QR/table flow, and only offered at
-    // all if the restaurant supports it.
     if (!_isTableFlow && (r?.supportsDelivery ?? true)) {
       types['DELIVERY'] = 'Delivery';
     }
     return types;
   }
 
-    Future<void> _applyPromoCode(CartProvider cart) async {
+  Future<void> _applyPromoCode(CartProvider cart) async {
     final code = _promoCodeController.text.trim();
     if (code.isEmpty) return;
 
@@ -95,34 +96,20 @@ class _CartScreenState extends State<CartScreen> {
     });
   }
 
-  Future<void> _handleSelectOrderType(String type) async {
-    if (type == 'DELIVERY') {
-      final result = await Navigator.push<DeliveryDetailsResult>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => DeliveryDetailsScreen(
-            initialAddress: _deliveryAddress,
-            initialPhone: _contactPhone,
-          ),
-        ),
-      );
-      if (result == null) return;
-      setState(() {
-        _orderType = 'DELIVERY';
-        _deliveryAddress = result.address;
-        _contactPhone = result.phone;
-      });
-    } else {
-      setState(() => _orderType = type);
-    }
-  }
-
   Future<void> _placeOrder(CartProvider cart) async {
-    if (_orderType == 'DELIVERY' && _deliveryAddress.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please provide delivery details')),
-      );
-      return;
+    if (_orderType == 'DELIVERY') {
+      if (_deliveryAddressController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a delivery address')),
+        );
+        return;
+      }
+      if (_contactPhoneController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a contact phone number')),
+        );
+        return;
+      }
     }
     if (_orderType == 'DINE_IN' && _tableNumberController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -147,10 +134,12 @@ class _CartScreenState extends State<CartScreen> {
       restaurantId: cart.restaurantId!,
       orderType: _orderType,
       items: items,
-      deliveryAddress: _deliveryAddress,
-      contactPhone: _contactPhone,
+      deliveryAddress: _deliveryAddressController.text.trim(),
+      contactPhone: _contactPhoneController.text.trim(),
       tableNumber: normalizedTable,
-      notes: _notesController.text.trim(),
+      notes: [_notesController.text.trim(), cart.buildItemNotesSummary()]
+          .where((s) => s.isNotEmpty)
+          .join('\n'),
       promoCode: _appliedPromoCode ?? '',
     );
 
@@ -292,7 +281,7 @@ class _CartScreenState extends State<CartScreen> {
                           labelStyle: TextStyle(
                             color: _orderType == e.key ? Colors.white : AppColors.textDark,
                           ),
-                          onSelected: (_) => _handleSelectOrderType(e.key),
+                          onSelected: (_) => setState(() => _orderType = e.key),
                         );
                       }).toList(),
                     ),
@@ -320,44 +309,25 @@ class _CartScreenState extends State<CartScreen> {
                     ],
                     if (_orderType == 'DELIVERY') ...[
                       const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.cardBackground,
-                          borderRadius: BorderRadius.circular(10),
+                      TextField(
+                        controller: _deliveryAddressController,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Delivery Address',
+                          hintText: 'House number, street, city',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.location_on_outlined),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.location_on_outlined, size: 18, color: AppColors.textGrey),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
-                                    _deliveryAddress.isEmpty ? 'No address set' : _deliveryAddress,
-                                    style: const TextStyle(fontSize: 13),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                const Icon(Icons.phone_outlined, size: 18, color: AppColors.textGrey),
-                                const SizedBox(width: 6),
-                                Text(_contactPhone.isEmpty ? 'No phone set' : _contactPhone,
-                                    style: const TextStyle(fontSize: 13)),
-                              ],
-                            ),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: () => _handleSelectOrderType('DELIVERY'),
-                                child: const Text('Edit'),
-                              ),
-                            ),
-                          ],
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _contactPhoneController,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(
+                          labelText: 'Contact Phone Number',
+                          hintText: 'e.g. 0771234567',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.phone_outlined),
                         ),
                       ),
                     ],
@@ -377,85 +347,85 @@ class _CartScreenState extends State<CartScreen> {
                       ),
                       maxLines: 2,
                     ),
-                const SizedBox(height: 16),
-                const Text('Promo Code', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                if (_appliedPromoCode != null)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEEF7ED),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.local_offer, color: Colors.green, size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '${_promoTitle ?? _appliedPromoCode} applied (-Rs. ${_discountAmount.toStringAsFixed(0)})',
-                            style: const TextStyle(fontSize: 13, color: Colors.green, fontWeight: FontWeight.w600),
+                    const SizedBox(height: 16),
+                    const Text('Promo Code', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    if (_appliedPromoCode != null)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEEF7ED),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.local_offer, color: Colors.green, size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${_promoTitle ?? _appliedPromoCode} applied (-Rs. ${_discountAmount.toStringAsFixed(0)})',
+                                style: const TextStyle(fontSize: 13, color: Colors.green, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, size: 18),
+                              onPressed: _removePromoCode,
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _promoCodeController,
+                              textCapitalization: TextCapitalization.characters,
+                              decoration: const InputDecoration(
+                                hintText: 'Enter promo code',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
                           ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, size: 18),
-                          onPressed: _removePromoCode,
-                        ),
+                          const SizedBox(width: 8),
+                          _validatingPromo
+                              ? const SizedBox(
+                                  width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                              : TextButton(
+                                  onPressed: () => _applyPromoCode(cart),
+                                  child: const Text('Apply'),
+                                ),
+                        ],
+                      ),
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Subtotal', style: TextStyle(fontSize: 14)),
+                        Text('Rs. ${cart.totalAmount.toStringAsFixed(0)}', style: const TextStyle(fontSize: 14)),
                       ],
                     ),
-                  )
-                else
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _promoCodeController,
-                          textCapitalization: TextCapitalization.characters,
-                          decoration: const InputDecoration(
-                            hintText: 'Enter promo code',
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                        ),
+                    if (_discountAmount > 0) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Discount', style: TextStyle(fontSize: 14, color: Colors.green)),
+                          Text('-Rs. ${_discountAmount.toStringAsFixed(0)}',
+                              style: const TextStyle(fontSize: 14, color: Colors.green)),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      _validatingPromo
-                          ? const SizedBox(
-                              width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                          : TextButton(
-                              onPressed: () => _applyPromoCode(cart),
-                              child: const Text('Apply'),
-                            ),
                     ],
-                  ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Subtotal', style: TextStyle(fontSize: 14)),
-                    Text('Rs. ${cart.totalAmount.toStringAsFixed(0)}', style: const TextStyle(fontSize: 14)),
-                  ],
-                ),
-                if (_discountAmount > 0) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Discount', style: TextStyle(fontSize: 14, color: Colors.green)),
-                      Text('-Rs. ${_discountAmount.toStringAsFixed(0)}',
-                          style: const TextStyle(fontSize: 14, color: Colors.green)),
-                    ],
-                  ),
-                ],
-                const Divider(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Total', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    Text('Rs. ${(cart.totalAmount - _discountAmount).toStringAsFixed(0)}',
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  ],
-                ),
+                    const Divider(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Total', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                        Text('Rs. ${(cart.totalAmount - _discountAmount).toStringAsFixed(0)}',
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
                     const SizedBox(height: 16),
                     _placing
                         ? const Center(child: CircularProgressIndicator())

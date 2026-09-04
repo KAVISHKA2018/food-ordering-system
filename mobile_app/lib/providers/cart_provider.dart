@@ -5,8 +5,14 @@ class CartItem {
   final MenuItemModel menuItem;
   final MenuItemVariantModel? variant;
   int quantity;
+  String note;
 
-  CartItem({required this.menuItem, this.variant, this.quantity = 1});
+  CartItem({
+    required this.menuItem,
+    this.variant,
+    this.quantity = 1,
+    this.note = '',
+  });
 
   double get unitPrice => variant?.price ?? menuItem.price;
   double get subtotal => unitPrice * quantity;
@@ -19,14 +25,7 @@ class CartProvider extends ChangeNotifier {
   int? _restaurantId;
   String? _restaurantName;
 
-  // Set only when arriving via "Add More Food" from My Table — carries a
-  // known table number through to Checkout so it's pre-filled.
   String? pendingTableNumber;
-
-  // Set when arriving via QR scan — no table number known yet, but the
-  // customer is confirmed to be physically at the restaurant, so Checkout
-  // should default to Dine In and hide Delivery, while still asking for
-  // the table number itself at checkout.
   bool isQRFlow = false;
 
   Map<String, CartItem> get items => _items;
@@ -49,7 +48,6 @@ class CartProvider extends ChangeNotifier {
     return _items[key]?.quantity ?? 0;
   }
 
-  /// Used by "Add More Food" (My Table screen) — table number already known.
   void setPendingTableNumber(int restaurantId, String restaurantName, String tableNumber) {
     if (_restaurantId != null && _restaurantId != restaurantId) {
       clear();
@@ -61,8 +59,6 @@ class CartProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Used by the QR scanner — table number not yet known, will be entered
-  /// by the customer at checkout.
   void setQRFlow(int restaurantId, String restaurantName) {
     if (_restaurantId != null && _restaurantId != restaurantId) {
       clear();
@@ -80,11 +76,15 @@ class CartProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Adds an item to the cart. [quantity] and [note] let the Food Detail
+  /// Sheet add a fully-configured line (size + qty + prep note) in one call.
   void addItem(
     MenuItemModel menuItem,
     int restaurantId,
     String restaurantName, {
     MenuItemVariantModel? variant,
+    int quantity = 1,
+    String? note,
   }) {
     if (_restaurantId != null && _restaurantId != restaurantId) {
       clear();
@@ -94,9 +94,17 @@ class CartProvider extends ChangeNotifier {
 
     final key = _keyFor(menuItem, variant);
     if (_items.containsKey(key)) {
-      _items[key]!.quantity += 1;
+      _items[key]!.quantity += quantity;
+      if (note != null && note.trim().isNotEmpty) {
+        _items[key]!.note = note.trim();
+      }
     } else {
-      _items[key] = CartItem(menuItem: menuItem, variant: variant);
+      _items[key] = CartItem(
+        menuItem: menuItem,
+        variant: variant,
+        quantity: quantity,
+        note: note?.trim() ?? '',
+      );
     }
     notifyListeners();
   }
@@ -138,6 +146,19 @@ class CartProvider extends ChangeNotifier {
       _restaurantName = null;
     }
     notifyListeners();
+  }
+
+  /// One line per cart item that has a preparation note, formatted for
+  /// inclusion in the order's general Notes field (no backend schema
+  /// change needed — this is a display/formatting convenience only).
+  String buildItemNotesSummary() {
+    final lines = <String>[];
+    for (final item in _items.values) {
+      if (item.note.trim().isNotEmpty) {
+        lines.add('${item.displayName}: ${item.note.trim()}');
+      }
+    }
+    return lines.join('\n');
   }
 
   void clear() {

@@ -44,7 +44,9 @@ class _TakeawayPaymentScreenState extends State<TakeawayPaymentScreen> {
       restaurantId: widget.restaurantId,
       orderType: 'TAKEAWAY',
       items: items,
-      notes: widget.notes,
+      notes: [widget.notes, cart.buildItemNotesSummary()]
+          .where((s) => s.isNotEmpty)
+          .join('\n'),
       promoCode: widget.promoCode,
     );
 

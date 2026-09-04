@@ -33,6 +33,9 @@ class MenuItemModel {
   final bool isVegetarian;
   final int stockQuantity;
   final List<MenuItemVariantModel> variants;
+  final String? recommendationReason;
+  final double? averageRating;
+  final int reviewCount;
 
   MenuItemModel({
     required this.id,
@@ -46,6 +49,9 @@ class MenuItemModel {
     required this.isVegetarian,
     required this.stockQuantity,
     this.variants = const [],
+    this.recommendationReason,
+    this.averageRating,
+    this.reviewCount = 0,
   });
 
   bool get hasVariants => variants.isNotEmpty;
@@ -65,6 +71,11 @@ class MenuItemModel {
       variants: (json['variants'] as List<dynamic>? ?? [])
           .map((v) => MenuItemVariantModel.fromJson(v))
           .toList(),
+      recommendationReason: json['recommendation_reason'],
+      averageRating: json['average_rating'] != null
+          ? double.parse(json['average_rating'].toString())
+          : null,
+      reviewCount: json['review_count'] ?? 0,
     );
   }
 }
