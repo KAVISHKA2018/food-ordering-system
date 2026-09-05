@@ -4,9 +4,12 @@ import 'providers/auth_provider.dart';
 import 'providers/cart_provider.dart';
 import 'config/app_theme.dart';
 import 'services/notification_service.dart';
-import 'screens/auth/login_screen.dart';
 import 'screens/orders/order_history_screen.dart';
 import 'screens/reservations/reservation_history_screen.dart';
+
+import 'screens/auth/login_screen.dart';
+
+import 'screens/activity/activity_hub_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,8 +34,8 @@ class MyApp extends StatelessWidget {
         theme: AppTheme.light(),
         home: const LoginScreen(),
         routes: {
-          '/orders': (_) => const OrderHistoryScreen(),
-          '/reservations': (_) => const ReservationHistoryScreen(),
+          '/orders': (_) => const ActivityHubScreen(initialTabIndex: 0),
+          '/reservations': (_) => const ActivityHubScreen(initialTabIndex: 0),
         },
       ),
     );

@@ -5,6 +5,8 @@ User = get_user_model()
 
 
 class RegisterSerializer(serializers.ModelSerializer):
+    """Legacy — kept only in case anything internal still references it.
+    The customer app no longer uses this; see RegisterWithDetailsView."""
     password = serializers.CharField(write_only=True, min_length=8)
 
     class Meta:
@@ -25,4 +27,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'role', 'phone_number', 'created_at']
+        fields = [
+            'id', 'username', 'email', 'first_name', 'last_name',
+            'role', 'phone_number', 'nic', 'address', 'pin_enabled', 'created_at'
+        ]

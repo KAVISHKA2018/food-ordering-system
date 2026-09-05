@@ -9,8 +9,8 @@ import '../../utils/table_number_utils.dart';
 import '../checkout/takeaway_payment_screen.dart';
 
 class CartScreen extends StatefulWidget {
-  final RestaurantModel? restaurant;
-  const CartScreen({super.key, this.restaurant});
+  final RestaurantModel restaurant;
+  const CartScreen({super.key, required this.restaurant});
 
   @override
   State<CartScreen> createState() => _CartScreenState();
@@ -33,6 +33,8 @@ class _CartScreenState extends State<CartScreen> {
   String? _promoTitle;
   bool _validatingPromo = false;
 
+  int get _restaurantId => widget.restaurant.id;
+
   @override
   void dispose() {
     _tableNumberController.dispose();
@@ -47,23 +49,23 @@ class _CartScreenState extends State<CartScreen> {
     final r = widget.restaurant;
     final types = <String, String>{};
 
-    if (r?.supportsDineIn ?? true) types['DINE_IN'] = 'Dine In';
-    if (r?.supportsTakeaway ?? true) types['TAKEAWAY'] = 'Takeaway';
-    if (!_isTableFlow && (r?.supportsDelivery ?? true)) {
+    if (r.supportsDineIn) types['DINE_IN'] = 'Dine In';
+    if (r.supportsTakeaway) types['TAKEAWAY'] = 'Takeaway';
+    if (!_isTableFlow && r.supportsDelivery) {
       types['DELIVERY'] = 'Delivery';
     }
     return types;
   }
 
-  Future<void> _applyPromoCode(CartProvider cart) async {
+  Future<void> _applyPromoCode(RestaurantCartData myCart) async {
     final code = _promoCodeController.text.trim();
     if (code.isEmpty) return;
 
     setState(() => _validatingPromo = true);
     final result = await PromotionService.validateCode(
-      restaurantId: cart.restaurantId!,
+      restaurantId: _restaurantId,
       code: code,
-      subtotal: cart.totalAmount,
+      subtotal: myCart.totalAmount,
     );
     setState(() => _validatingPromo = false);
 
@@ -96,7 +98,7 @@ class _CartScreenState extends State<CartScreen> {
     });
   }
 
-  Future<void> _placeOrder(CartProvider cart) async {
+  Future<void> _placeOrder(CartProvider cart, RestaurantCartData myCart) async {
     if (_orderType == 'DELIVERY') {
       if (_deliveryAddressController.text.trim().isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -120,7 +122,7 @@ class _CartScreenState extends State<CartScreen> {
 
     setState(() => _placing = true);
 
-    final items = cart.items.values
+    final items = myCart.items.values
         .map((cartItem) => {
               'menu_item': cartItem.menuItem.id,
               if (cartItem.variant != null) 'variant': cartItem.variant!.id,
@@ -131,13 +133,13 @@ class _CartScreenState extends State<CartScreen> {
     final normalizedTable = normalizeTableNumber(_tableNumberController.text);
 
     final result = await OrderService.createOrder(
-      restaurantId: cart.restaurantId!,
+      restaurantId: _restaurantId,
       orderType: _orderType,
       items: items,
       deliveryAddress: _deliveryAddressController.text.trim(),
       contactPhone: _contactPhoneController.text.trim(),
       tableNumber: normalizedTable,
-      notes: [_notesController.text.trim(), cart.buildItemNotesSummary()]
+      notes: [_notesController.text.trim(), myCart.buildItemNotesSummary()]
           .where((s) => s.isNotEmpty)
           .join('\n'),
       promoCode: _appliedPromoCode ?? '',
@@ -159,7 +161,7 @@ class _CartScreenState extends State<CartScreen> {
     }
 
     final order = result['order'];
-    cart.clear();
+    cart.clearRestaurant(_restaurantId);
 
     if (!mounted) return;
     _showSuccessDialog(order);
@@ -170,8 +172,8 @@ class _CartScreenState extends State<CartScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => TakeawayPaymentScreen(
-          restaurantId: cart.restaurantId!,
-          restaurantName: cart.restaurantName ?? 'Restaurant',
+          restaurantId: _restaurantId,
+          restaurantName: widget.restaurant.name,
           notes: _notesController.text.trim(),
           promoCode: _appliedPromoCode ?? '',
           discountAmount: _discountAmount,
@@ -189,7 +191,7 @@ class _CartScreenState extends State<CartScreen> {
         title: const Text('Order Placed!'),
         content: Text(
           order.orderType == 'DINE_IN'
-              ? 'Your order #${order.id} has been sent to the kitchen. It has been added to your table\'s bill — pay anytime from "My Table".'
+              ? 'Your order #${order.id} has been sent to the kitchen. It has been added to your table\'s bill — pay anytime from "Active Sessions".'
               : 'Your order #${order.id} has been placed successfully.',
         ),
         actions: [
@@ -207,6 +209,7 @@ class _CartScreenState extends State<CartScreen> {
   @override
   Widget build(BuildContext context) {
     final cart = Provider.of<CartProvider>(context);
+    final myCart = cart.cartFor(_restaurantId);
 
     if (!_initializedFromCart) {
       if (cart.pendingTableNumber != null) {
@@ -226,8 +229,8 @@ class _CartScreenState extends State<CartScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text(cart.restaurantName ?? 'Your Cart')),
-      body: cart.isEmpty
+      appBar: AppBar(title: Text(widget.restaurant.name)),
+      body: (myCart == null || myCart.isEmpty)
           ? const Center(child: Text('Your cart is empty'))
           : orderTypes.isEmpty
               ? const Center(
@@ -242,7 +245,7 @@ class _CartScreenState extends State<CartScreen> {
               : ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
-                    ...cart.items.entries.map((entry) {
+                    ...myCart.items.entries.map((entry) {
                       final key = entry.key;
                       final cartItem = entry.value;
                       return Card(
@@ -256,12 +259,12 @@ class _CartScreenState extends State<CartScreen> {
                             children: [
                               IconButton(
                                 icon: const Icon(Icons.remove_circle_outline),
-                                onPressed: () => cart.decrementByKey(key),
+                                onPressed: () => cart.decrementByKey(_restaurantId, key),
                               ),
                               Text('${cartItem.quantity}'),
                               IconButton(
                                 icon: const Icon(Icons.add_circle_outline),
-                                onPressed: () => cart.incrementByKey(key),
+                                onPressed: () => cart.incrementByKey(_restaurantId, key),
                               ),
                             ],
                           ),
@@ -303,7 +306,7 @@ class _CartScreenState extends State<CartScreen> {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        'This order will be added to your table\'s bill. You can pay now or later from "My Table".',
+                        'This order will be added to your table\'s bill. You can pay now or later from "Active Sessions".',
                         style: TextStyle(color: AppColors.textGrey, fontSize: 12),
                       ),
                     ],
@@ -393,7 +396,7 @@ class _CartScreenState extends State<CartScreen> {
                               ? const SizedBox(
                                   width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                               : TextButton(
-                                  onPressed: () => _applyPromoCode(cart),
+                                  onPressed: () => _applyPromoCode(myCart),
                                   child: const Text('Apply'),
                                 ),
                         ],
@@ -403,7 +406,7 @@ class _CartScreenState extends State<CartScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text('Subtotal', style: TextStyle(fontSize: 14)),
-                        Text('Rs. ${cart.totalAmount.toStringAsFixed(0)}', style: const TextStyle(fontSize: 14)),
+                        Text('Rs. ${myCart.totalAmount.toStringAsFixed(0)}', style: const TextStyle(fontSize: 14)),
                       ],
                     ),
                     if (_discountAmount > 0) ...[
@@ -422,7 +425,7 @@ class _CartScreenState extends State<CartScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text('Total', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                        Text('Rs. ${(cart.totalAmount - _discountAmount).toStringAsFixed(0)}',
+                        Text('Rs. ${(myCart.totalAmount - _discountAmount).toStringAsFixed(0)}',
                             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                       ],
                     ),
@@ -432,7 +435,7 @@ class _CartScreenState extends State<CartScreen> {
                         : ElevatedButton(
                             onPressed: () => _orderType == 'TAKEAWAY'
                                 ? _goToTakeawayPayment(cart)
-                                : _placeOrder(cart),
+                                : _placeOrder(cart, myCart),
                             style: ElevatedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               minimumSize: const Size(double.infinity, 0),

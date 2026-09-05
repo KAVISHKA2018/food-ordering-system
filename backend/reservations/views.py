@@ -124,3 +124,8 @@ class ReservationViewSet(viewsets.ModelViewSet):
         ).exclude(status__in=['CANCELLED', 'COMPLETED', 'NO_SHOW'])
         serializer = ReservationSerializer(queryset, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def active_count(self, request):
+        count = self.get_queryset().filter(status__in=['PENDING', 'CONFIRMED']).count()
+        return Response({'count': count})

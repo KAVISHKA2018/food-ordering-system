@@ -113,7 +113,7 @@ export default function ReservationsPage() {
       if (filter === 'ALL') return true;
       if (filter === 'UPCOMING') {
         const resDate = new Date(r.reservation_date);
-        return resDate >= today && !['CANCELLED', 'COMPLETED', 'NO_SHOW'].includes(r.status);
+        return resDate >= today && !['SEATED', 'CANCELLED', 'COMPLETED', 'NO_SHOW'].includes(r.status);
       }
       return r.status === filter;
     })
@@ -134,19 +134,42 @@ export default function ReservationsPage() {
         {error && <div style={styles.error}>{error}</div>}
 
         <div style={styles.filters}>
-          {['UPCOMING', 'ALL', ...STATUS_OPTIONS].map((s) => (
-            <button
-              key={s}
-              onClick={() => setFilter(s)}
-              style={{
-                ...styles.filterBtn,
-                backgroundColor: filter === s ? '#E8865A' : '#fff',
-                color: filter === s ? '#fff' : '#2B2B2B',
-              }}
-            >
-              {s === 'ALL' ? 'All' : s === 'UPCOMING' ? 'Upcoming' : statusLabel(s)}
-            </button>
-          ))}
+          {['UPCOMING', 'ALL', ...STATUS_OPTIONS].map((s) => {
+            let count = 0;
+            if (s === 'SEATED') {
+              count = reservations.filter((r) => r.status === 'SEATED').length;
+            } else if (s === 'UPCOMING') {
+              count = reservations.filter((r) => {
+                const resDate = new Date(r.reservation_date);
+                return resDate >= today && !['SEATED', 'CANCELLED', 'COMPLETED', 'NO_SHOW'].includes(r.status);
+              }).length;
+            }
+
+            return (
+              <button
+                key={s}
+                onClick={() => setFilter(s)}
+                style={{
+                  ...styles.filterBtn,
+                  backgroundColor: filter === s ? '#E8865A' : '#fff',
+                  color: filter === s ? '#fff' : '#2B2B2B',
+                }}
+              >
+                {s === 'ALL' ? 'All' : s === 'UPCOMING' ? 'Upcoming' : statusLabel(s)}
+                {count > 0 && (
+                  <span
+                    style={{
+                      ...styles.filterBadge,
+                      backgroundColor: filter === s ? 'rgba(255,255,255,0.3)' : '#E53935',
+                      color: '#fff',
+                    }}
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {filteredReservations.length === 0 ? (
@@ -293,22 +316,6 @@ export default function ReservationsPage() {
                           Mark Seated
                         </button>
                       )}
-                      {res.status === 'SEATED' && (
-                        <button
-                          style={styles.primaryBtn}
-                          disabled={isUpdating}
-                          onClick={() => handleStatusChange(res, 'COMPLETED')}
-                        >
-                          Mark Completed
-                        </button>
-                      )}
-                      <button
-                        style={styles.secondaryActionBtn}
-                        disabled={isUpdating}
-                        onClick={() => handleStatusChange(res, 'NO_SHOW')}
-                      >
-                        No Show
-                      </button>
                       <button
                         style={styles.cancelBtn}
                         disabled={isUpdating}
@@ -334,7 +341,18 @@ const styles = {
   filters: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '24px' },
   filterBtn: {
     padding: '8px 14px', border: '1px solid #ddd', borderRadius: '20px', cursor: 'pointer', fontSize: '13px',
+    display: 'inline-flex', alignItems: 'center', gap: '6px',
   },
+  filterBadge: {
+    borderRadius: '10px',
+    fontSize: '11px',
+    fontWeight: 700,
+    padding: '1px 6px',
+    minWidth: '16px',
+    textAlign: 'center',
+    lineHeight: 1.4,
+  },
+
   grid: {
     display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px',
   },

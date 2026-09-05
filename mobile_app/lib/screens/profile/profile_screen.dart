@@ -4,6 +4,7 @@ import '../../config/app_theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/user_model.dart';
 import '../auth/login_screen.dart';
+import 'pin_settings_section.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -138,6 +139,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           const SizedBox(height: 32),
+          const PinSettingsSection(),
+          const SizedBox(height: 20),
           const Text('Email', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textGrey, fontSize: 13)),
           const SizedBox(height: 6),
           _editing

@@ -20,51 +20,65 @@ class CartItem {
       variant != null ? '${menuItem.name} (${variant!.name})' : menuItem.name;
 }
 
-class CartProvider extends ChangeNotifier {
-  final Map<String, CartItem> _items = {};
-  int? _restaurantId;
-  String? _restaurantName;
+/// One restaurant's cart. Multiple of these can exist at once — items from
+/// different restaurants are never mixed together.
+class RestaurantCartData {
+  final int restaurantId;
+  final String restaurantName;
+  final Map<String, CartItem> items = {};
 
+  RestaurantCartData({required this.restaurantId, required this.restaurantName});
+
+  double get totalAmount => items.values.fold(0.0, (sum, i) => sum + i.subtotal);
+  int get itemCount => items.values.fold(0, (sum, i) => sum + i.quantity);
+  bool get isEmpty => items.isEmpty;
+
+  String buildItemNotesSummary() {
+    final lines = <String>[];
+    for (final item in items.values) {
+      if (item.note.trim().isNotEmpty) {
+        lines.add('${item.displayName}: ${item.note.trim()}');
+      }
+    }
+    return lines.join('\n');
+  }
+}
+
+class CartProvider extends ChangeNotifier {
+  final Map<int, RestaurantCartData> _restaurantCarts = {};
+
+  // Set only right after a QR scan / "Add More Food" — consumed by the
+  // Cart screen for whichever restaurant the customer checks out next.
   String? pendingTableNumber;
   bool isQRFlow = false;
 
-  Map<String, CartItem> get items => _items;
-  int? get restaurantId => _restaurantId;
-  String? get restaurantName => _restaurantName;
+  /// All restaurants that currently have at least one item in their cart.
+  /// Empty carts are never included, matching "empty restaurants should
+  /// not be displayed."
+  List<RestaurantCartData> get restaurantCarts =>
+      _restaurantCarts.values.where((c) => !c.isEmpty).toList();
 
-  int get itemCount => _items.values.fold(0, (sum, item) => sum + item.quantity);
+  bool get hasAnyItems => restaurantCarts.isNotEmpty;
 
-  double get totalAmount =>
-      _items.values.fold(0.0, (sum, item) => sum + item.subtotal);
-
-  bool get isEmpty => _items.isEmpty;
+  RestaurantCartData? cartFor(int restaurantId) => _restaurantCarts[restaurantId];
 
   String _keyFor(MenuItemModel menuItem, MenuItemVariantModel? variant) {
     return variant != null ? '${menuItem.id}_v${variant.id}' : '${menuItem.id}';
   }
 
-  int quantityFor(MenuItemModel menuItem, MenuItemVariantModel? variant) {
-    final key = _keyFor(menuItem, variant);
-    return _items[key]?.quantity ?? 0;
+  int quantityFor(int restaurantId, MenuItemModel menuItem, MenuItemVariantModel? variant) {
+    final cart = _restaurantCarts[restaurantId];
+    if (cart == null) return 0;
+    return cart.items[_keyFor(menuItem, variant)]?.quantity ?? 0;
   }
 
   void setPendingTableNumber(int restaurantId, String restaurantName, String tableNumber) {
-    if (_restaurantId != null && _restaurantId != restaurantId) {
-      clear();
-    }
-    _restaurantId = restaurantId;
-    _restaurantName = restaurantName;
     pendingTableNumber = tableNumber;
     isQRFlow = false;
     notifyListeners();
   }
 
   void setQRFlow(int restaurantId, String restaurantName) {
-    if (_restaurantId != null && _restaurantId != restaurantId) {
-      clear();
-    }
-    _restaurantId = restaurantId;
-    _restaurantName = restaurantName;
     isQRFlow = true;
     pendingTableNumber = null;
     notifyListeners();
@@ -76,8 +90,6 @@ class CartProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Adds an item to the cart. [quantity] and [note] let the Food Detail
-  /// Sheet add a fully-configured line (size + qty + prep note) in one call.
   void addItem(
     MenuItemModel menuItem,
     int restaurantId,
@@ -86,20 +98,19 @@ class CartProvider extends ChangeNotifier {
     int quantity = 1,
     String? note,
   }) {
-    if (_restaurantId != null && _restaurantId != restaurantId) {
-      clear();
-    }
-    _restaurantId = restaurantId;
-    _restaurantName = restaurantName;
+    final cart = _restaurantCarts.putIfAbsent(
+      restaurantId,
+      () => RestaurantCartData(restaurantId: restaurantId, restaurantName: restaurantName),
+    );
 
     final key = _keyFor(menuItem, variant);
-    if (_items.containsKey(key)) {
-      _items[key]!.quantity += quantity;
+    if (cart.items.containsKey(key)) {
+      cart.items[key]!.quantity += quantity;
       if (note != null && note.trim().isNotEmpty) {
-        _items[key]!.note = note.trim();
+        cart.items[key]!.note = note.trim();
       }
     } else {
-      _items[key] = CartItem(
+      cart.items[key] = CartItem(
         menuItem: menuItem,
         variant: variant,
         quantity: quantity,
@@ -109,62 +120,46 @@ class CartProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void incrementByKey(String key) {
-    if (_items.containsKey(key)) {
-      _items[key]!.quantity += 1;
-      notifyListeners();
+  void incrementByKey(int restaurantId, String key) {
+    final cart = _restaurantCarts[restaurantId];
+    if (cart == null || !cart.items.containsKey(key)) return;
+    cart.items[key]!.quantity += 1;
+    notifyListeners();
+  }
+
+  void decrementByKey(int restaurantId, String key) {
+    final cart = _restaurantCarts[restaurantId];
+    if (cart == null || !cart.items.containsKey(key)) return;
+
+    if (cart.items[key]!.quantity > 1) {
+      cart.items[key]!.quantity -= 1;
+    } else {
+      cart.items.remove(key);
     }
-  }
-
-  void decrementByKey(String key) {
-    if (_items.containsKey(key)) {
-      if (_items[key]!.quantity > 1) {
-        _items[key]!.quantity -= 1;
-      } else {
-        _items.remove(key);
-      }
-      notifyListeners();
-    }
-    if (_items.isEmpty) {
-      _restaurantId = null;
-      _restaurantName = null;
-    }
-  }
-
-  void increment(MenuItemModel menuItem, MenuItemVariantModel? variant) {
-    incrementByKey(_keyFor(menuItem, variant));
-  }
-
-  void decrement(MenuItemModel menuItem, MenuItemVariantModel? variant) {
-    decrementByKey(_keyFor(menuItem, variant));
-  }
-
-  void removeItem(String key) {
-    _items.remove(key);
-    if (_items.isEmpty) {
-      _restaurantId = null;
-      _restaurantName = null;
+    if (cart.isEmpty) {
+      _restaurantCarts.remove(restaurantId);
     }
     notifyListeners();
   }
 
-  /// One line per cart item that has a preparation note, formatted for
-  /// inclusion in the order's general Notes field (no backend schema
-  /// change needed — this is a display/formatting convenience only).
-  String buildItemNotesSummary() {
-    final lines = <String>[];
-    for (final item in _items.values) {
-      if (item.note.trim().isNotEmpty) {
-        lines.add('${item.displayName}: ${item.note.trim()}');
-      }
-    }
-    return lines.join('\n');
+  void increment(int restaurantId, MenuItemModel menuItem, MenuItemVariantModel? variant) {
+    incrementByKey(restaurantId, _keyFor(menuItem, variant));
   }
 
-  void clear() {
-    _items.clear();
-    _restaurantId = null;
-    _restaurantName = null;
+  void decrement(int restaurantId, MenuItemModel menuItem, MenuItemVariantModel? variant) {
+    decrementByKey(restaurantId, _keyFor(menuItem, variant));
+  }
+
+  /// Clears just one restaurant's cart (e.g. after that restaurant's order
+  /// is placed) — other restaurants' carts are untouched.
+  void clearRestaurant(int restaurantId) {
+    _restaurantCarts.remove(restaurantId);
+    notifyListeners();
+  }
+
+  /// Clears everything — used on logout, not during normal checkout.
+  void clearAll() {
+    _restaurantCarts.clear();
     pendingTableNumber = null;
     isQRFlow = false;
     notifyListeners();

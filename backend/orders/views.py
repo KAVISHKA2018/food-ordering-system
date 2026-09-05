@@ -109,6 +109,11 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return Response(OrderSerializer(order).data)
 
+    @action(detail=False, methods=['get'])
+    def active_count(self, request):
+        count = self.get_queryset().exclude(status__in=['COMPLETED', 'CANCELLED']).count()
+        return Response({'count': count})
+
 
 class TableSessionViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = TableSessionSerializer
@@ -199,3 +204,8 @@ class TableSessionViewSet(viewsets.ReadOnlyModelViewSet):
         )
 
         return Response(TableSessionSerializer(session).data)
+
+    @action(detail=False, methods=['get'])
+    def active_count(self, request):
+        count = self.get_queryset().filter(status__in=['OPEN', 'PAYMENT_PENDING']).count()
+        return Response({'count': count})

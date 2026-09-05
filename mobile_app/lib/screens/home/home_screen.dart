@@ -8,6 +8,7 @@ import '../restaurant/restaurant_detail_screen.dart';
 import '../orders/order_history_screen.dart';
 import '../orders/my_table_screen.dart';
 import '../reservations/reservation_history_screen.dart';
+import '../activity/activity_hub_screen.dart';
 import '../profile/profile_screen.dart';
 import '../scan/qr_scanner_screen.dart';
 
@@ -20,6 +21,7 @@ import '../../services/recommendation_service.dart';
 import 'package:provider/provider.dart';
 import '../../providers/cart_provider.dart';
 import '../restaurant/food_detail_sheet.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -103,32 +105,15 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          PopupMenuButton<String>(
+          IconButton(
             icon: const Icon(Icons.receipt_long, color: AppColors.textDark),
-            tooltip: 'History',
-            onSelected: (value) {
-              if (value == 'orders') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const OrderHistoryScreen()),
-                );
-              } else if (value == 'reservations') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ReservationHistoryScreen()),
-                );
-              } else if (value == 'my_table') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const MyTableScreen()),
-                );
-              }
+            tooltip: 'My Activity',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ActivityHubScreen()),
+              );
             },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'my_table', child: Text('My Table')),
-              const PopupMenuItem(value: 'orders', child: Text('My Orders')),
-              const PopupMenuItem(value: 'reservations', child: Text('My Reservations')),
-            ],
           ),
           IconButton(
             icon: const Icon(Icons.person, color: AppColors.textDark),

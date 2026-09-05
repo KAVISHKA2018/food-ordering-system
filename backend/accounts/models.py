@@ -18,8 +18,24 @@ class User(AbstractUser):
     profile_picture = models.ImageField(
         upload_to='profile_pictures/', blank=True, null=True
     )
+    nic = models.CharField(max_length=20, blank=True)
+    address = models.CharField(max_length=255, blank=True)
+    pin_enabled = models.BooleanField(default=False)
+    pin_code = models.CharField(max_length=128, blank=True)  # hashed, separate from main password
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"{self.username} ({self.role})"
+
+
+class PhoneOTP(models.Model):
+    phone_number = models.CharField(max_length=20)
+    code = models.CharField(max_length=6)
+    is_verified = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    verified_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.phone_number} — {self.code} ({'verified' if self.is_verified else 'pending'})"

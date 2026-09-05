@@ -4,6 +4,7 @@ import '../../config/api_config.dart';
 import '../../config/app_theme.dart';
 import '../../models/restaurant_model.dart';
 import '../../models/menu_item_model.dart';
+import 'preorder_food_detail_sheet.dart';
 
 class SelectedPreOrderItem {
   final MenuItemModel menuItem;
@@ -75,81 +76,15 @@ class _PreOrderSelectionScreenState extends State<PreOrderSelectionScreen> {
 
   int get _itemCount => _quantities.values.fold(0, (sum, q) => sum + q);
 
-  void _openVariantPicker(MenuItemModel item) {
-    showModalBottomSheet(
+  void _openItemSheet(MenuItemModel item) {
+    showPreOrderItemSheet(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(item.name,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    const Text('Choose a size',
-                        style: TextStyle(color: AppColors.textGrey, fontSize: 13)),
-                    const SizedBox(height: 16),
-                    ...item.variants.map((variant) {
-                      final qty = _quantityFor(item, variant);
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(variant.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                  Text('Rs. ${variant.price.toStringAsFixed(0)}',
-                                      style: const TextStyle(color: AppColors.textGrey, fontSize: 13)),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.remove_circle_outline),
-                              onPressed: qty > 0
-                                  ? () => setState(() {
-                                        setSheetState(() {
-                                          _quantities[_keyFor(item, variant)] = qty - 1;
-                                        });
-                                      })
-                                  : null,
-                            ),
-                            Text('$qty', style: const TextStyle(fontSize: 16)),
-                            IconButton(
-                              icon: const Icon(Icons.add_circle_outline, color: AppColors.primary),
-                              onPressed: () => setState(() {
-                                setSheetState(() {
-                                  _quantities[_keyFor(item, variant)] = qty + 1;
-                                });
-                              }),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Done'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
+      item: item,
+      onAdd: (item, variant, quantity) {
+        setState(() {
+          final key = _keyFor(item, variant);
+          _quantities[key] = (_quantities[key] ?? 0) + quantity;
+        });
       },
     );
   }
@@ -283,131 +218,105 @@ class _PreOrderSelectionScreenState extends State<PreOrderSelectionScreen> {
                       (context, index) {
                         final item = availableItems[index];
                         final itemImageUrl = ApiConfig.imageUrl(item.image);
-                        final hasVariants = item.hasVariants;
-                        final qty = hasVariants
-                            ? _totalQuantityFor(item)
-                            : _quantityFor(item, null);
+                        final cartQty = _totalQuantityFor(item);
 
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: itemImageUrl.isNotEmpty
-                                    ? CachedNetworkImage(
-                                        imageUrl: itemImageUrl,
-                                        width: 50,
-                                        height: 50,
-                                        fit: BoxFit.cover,
-                                        placeholder: (_, __) => Container(
-                                          width: 50,
-                                          height: 50,
-                                          color: AppColors.primary.withValues(alpha: 0.1),
-                                        ),
-                                        errorWidget: (_, __, ___) => Container(
-                                          width: 50,
-                                          height: 50,
+                        return InkWell(
+                          onTap: () => _openItemSheet(item),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: itemImageUrl.isNotEmpty
+                                      ? CachedNetworkImage(
+                                          imageUrl: itemImageUrl,
+                                          width: 56,
+                                          height: 56,
+                                          fit: BoxFit.cover,
+                                          placeholder: (_, __) => Container(
+                                            width: 56,
+                                            height: 56,
+                                            color: AppColors.primary.withValues(alpha: 0.1),
+                                          ),
+                                          errorWidget: (_, __, ___) => Container(
+                                            width: 56,
+                                            height: 56,
+                                            color: AppColors.primary.withValues(alpha: 0.15),
+                                            child: const Icon(Icons.fastfood,
+                                                color: AppColors.primary, size: 22),
+                                          ),
+                                        )
+                                      : Container(
+                                          width: 56,
+                                          height: 56,
                                           color: AppColors.primary.withValues(alpha: 0.15),
                                           child: const Icon(Icons.fastfood,
-                                              color: AppColors.primary, size: 20),
+                                              color: AppColors.primary, size: 22),
                                         ),
-                                      )
-                                    : Container(
-                                        width: 50,
-                                        height: 50,
-                                        color: AppColors.primary.withValues(alpha: 0.15),
-                                        child: const Icon(Icons.fastfood,
-                                            color: AppColors.primary, size: 20),
-                                      ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(item.name,
-                                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                                    if (item.description.isNotEmpty)
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(item.name,
+                                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                                      if (item.description.isNotEmpty)
+                                        Text(
+                                          item.description,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(color: AppColors.textGrey, fontSize: 12),
+                                        ),
+                                      const SizedBox(height: 2),
                                       Text(
-                                        item.description,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(color: AppColors.textGrey, fontSize: 12),
+                                        item.hasVariants
+                                            ? 'From Rs. ${item.variants.map((v) => v.price).reduce((a, b) => a < b ? a : b).toStringAsFixed(0)}'
+                                            : 'Rs. ${item.price.toStringAsFixed(0)}',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                                       ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 110,
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                const SizedBox(width: 8),
+                                Stack(
+                                  clipBehavior: Clip.none,
                                   children: [
-                                    Text(
-                                      hasVariants
-                                          ? 'From Rs. ${item.variants.map((v) => v.price).reduce((a, b) => a < b ? a : b).toStringAsFixed(0)}'
-                                          : 'Rs. ${item.price.toStringAsFixed(0)}',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                    Container(
+                                      width: 34,
+                                      height: 34,
+                                      decoration: const BoxDecoration(
+                                        color: AppColors.primary,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.add, color: Colors.white, size: 20),
                                     ),
-                                    const SizedBox(height: 4),
-                                    if (hasVariants)
-                                      OutlinedButton(
-                                        style: OutlinedButton.styleFrom(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                          minimumSize: const Size(0, 32),
+                                    if (cartQty > 0)
+                                      Positioned(
+                                        right: -4,
+                                        top: -4,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(3),
+                                          decoration: const BoxDecoration(
+                                            color: Colors.black,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                                          child: Text(
+                                            '$cartQty',
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                                color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                          ),
                                         ),
-                                        onPressed: () => _openVariantPicker(item),
-                                        child: Text(
-                                          qty > 0 ? 'In cart ($qty)' : 'Select size',
-                                          style: const TextStyle(fontSize: 12),
-                                        ),
-                                      )
-                                    else if (qty == 0)
-                                      SizedBox(
-                                        height: 32,
-                                        child: OutlinedButton(
-                                          style: OutlinedButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                                          ),
-                                          onPressed: () => setState(
-                                              () => _quantities[_keyFor(item, null)] = 1),
-                                          child: const Text('Add', style: TextStyle(fontSize: 13)),
-                                        ),
-                                      )
-                                    else
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          IconButton(
-                                            padding: EdgeInsets.zero,
-                                            constraints: const BoxConstraints(),
-                                            icon: const Icon(Icons.remove_circle,
-                                                color: AppColors.primary, size: 22),
-                                            onPressed: () => setState(
-                                                () => _quantities[_keyFor(item, null)] = qty - 1),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                                            child: Text('$qty'),
-                                          ),
-                                          IconButton(
-                                            padding: EdgeInsets.zero,
-                                            constraints: const BoxConstraints(),
-                                            icon: const Icon(Icons.add_circle,
-                                                color: AppColors.primary, size: 22),
-                                            onPressed: () => setState(
-                                                () => _quantities[_keyFor(item, null)] = qty + 1),
-                                          ),
-                                        ],
                                       ),
                                   ],
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         );
                       },

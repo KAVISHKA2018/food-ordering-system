@@ -1,19 +1,56 @@
+import apiClient from '../services/apiClient';
+import { API_CONFIG } from '../config/apiConfig';
+
 import { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import restaurantService from '../services/restaurantService';
 import { imageUrl } from '../config/apiConfig';
 
+
+const POLL_INTERVAL_MS = 20000; // refresh badge counts every 20s
+
 export default function Sidebar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [restaurant, setRestaurant] = useState(null);
+  const [counts, setCounts] = useState({ orders: 0, tables: 0, reservations: 0 });
 
   useEffect(() => {
     restaurantService
       .getMyRestaurant()
       .then((r) => setRestaurant(r))
       .catch(() => setRestaurant(null));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCounts = async () => {
+      try {
+        const [ordersRes, sessionsRes, reservationsRes] = await Promise.all([
+          apiClient.get(`${API_CONFIG.orders}active_count/`),
+          apiClient.get(`${API_CONFIG.tableSessions}active_count/`),
+          apiClient.get(`${API_CONFIG.reservations}active_count/`),
+        ]);
+        if (cancelled) return;
+
+        setCounts({
+          orders: ordersRes.data.count,
+          tables: sessionsRes.data.count,
+          reservations: reservationsRes.data.count,
+        });
+      } catch {
+        // silently ignore — badges just won't update this cycle
+      }
+    };
+
+    loadCounts();
+    const interval = setInterval(loadCounts, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
   const handleLogout = () => {
@@ -28,6 +65,11 @@ export default function Sidebar() {
   });
 
   const logoUrl = restaurant ? imageUrl(restaurant.logo) : null;
+
+  const Badge = ({ count }) => {
+    if (!count) return null;
+    return <span style={styles.badge}>{count > 99 ? '99+' : count}</span>;
+  };
 
   return (
     <div style={styles.sidebar}>
@@ -51,9 +93,24 @@ export default function Sidebar() {
         <nav style={styles.nav}>
           <NavLink to="/dashboard" style={linkStyle}>Dashboard</NavLink>
           <NavLink to="/menu" style={linkStyle}>Menu Management</NavLink>
-          <NavLink to="/orders" style={linkStyle}>Orders</NavLink>
-          <NavLink to="/reservations" style={linkStyle}>Reservations</NavLink>
-          <NavLink to="/tables" style={linkStyle}>Tables</NavLink>
+          <NavLink to="/orders" style={({ isActive }) => linkStyle({ isActive })}>
+            <span style={styles.linkRow}>
+              Orders
+              <Badge count={counts.orders} />
+            </span>
+          </NavLink>
+          <NavLink to="/reservations" style={linkStyle}>
+            <span style={styles.linkRow}>
+              Reservations
+              <Badge count={counts.reservations} />
+            </span>
+          </NavLink>
+          <NavLink to="/tables" style={linkStyle}>
+            <span style={styles.linkRow}>
+              Tables
+              <Badge count={counts.tables} />
+            </span>
+          </NavLink>
           <NavLink to="/promotions" style={linkStyle}>Promotions</NavLink>
           <NavLink to="/reviews" style={linkStyle}>Reviews</NavLink>
         </nav>
@@ -117,6 +174,22 @@ const styles = {
     textDecoration: 'none',
     fontSize: '14px',
     fontWeight: 500,
+  },
+  linkRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  badge: {
+    backgroundColor: '#E53935',
+    color: '#fff',
+    borderRadius: '10px',
+    fontSize: '11px',
+    fontWeight: 700,
+    padding: '2px 7px',
+    minWidth: '18px',
+    textAlign: 'center',
+    lineHeight: 1.4,
   },
   logoutBtn: {
     padding: '10px',

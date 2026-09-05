@@ -327,6 +327,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
 
         final coverUrl = ApiConfig.imageUrl(restaurant.coverImage);
         final logoUrl = ApiConfig.imageUrl(restaurant.logo);
+        final myCart = cart.cartFor(restaurant.id);
 
         return Scaffold(
           body: CustomScrollView(
@@ -499,8 +500,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                             final itemImageUrl = ApiConfig.imageUrl(item.image);
                             final cartQty = item.hasVariants
                                 ? item.variants.fold<int>(
-                                    0, (sum, v) => sum + cart.quantityFor(item, v))
-                                : cart.quantityFor(item, null);
+                                    0, (sum, v) => sum + cart.quantityFor(restaurant.id, item, v))
+                                : cart.quantityFor(restaurant.id, item, null);
 
                             return InkWell(
                               onTap: item.isAvailable
@@ -619,7 +620,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
               const SliverToBoxAdapter(child: SizedBox(height: 80)),
             ],
           ),
-          floatingActionButton: cart.isEmpty
+          floatingActionButton: (myCart == null || myCart.isEmpty)
               ? null
               : FloatingActionButton.extended(
                   backgroundColor: AppColors.primary,
@@ -633,7 +634,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                   },
                   icon: const Icon(Icons.shopping_cart, color: Colors.white),
                   label: Text(
-                    'View Cart (${cart.itemCount}) · Rs. ${cart.totalAmount.toStringAsFixed(0)}',
+                    'View Cart (${myCart.itemCount}) · Rs. ${myCart.totalAmount.toStringAsFixed(0)}',
                     style: const TextStyle(color: Colors.white),
                   ),
                 ),
