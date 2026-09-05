@@ -5,9 +5,6 @@ import '../../config/app_theme.dart';
 import '../../models/restaurant_model.dart';
 import '../../services/restaurant_service.dart';
 import '../restaurant/restaurant_detail_screen.dart';
-import '../orders/order_history_screen.dart';
-import '../orders/my_table_screen.dart';
-import '../reservations/reservation_history_screen.dart';
 import '../activity/activity_hub_screen.dart';
 import '../profile/profile_screen.dart';
 import '../scan/qr_scanner_screen.dart';
@@ -21,6 +18,8 @@ import '../../services/recommendation_service.dart';
 import 'package:provider/provider.dart';
 import '../../providers/cart_provider.dart';
 import '../restaurant/food_detail_sheet.dart';
+import '../../widgets/floating_cart_button.dart';
+import '../activity/cart_tab.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -65,23 +64,72 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _openCartSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return FractionallySizedBox(
+          heightFactor: 0.85,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Text('Your Cart', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+                const Expanded(child: CartTab()),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _refresh,
-          child: CustomScrollView(
-            slivers: [
-              SliverToBoxAdapter(child: _buildHeader()),
-              SliverToBoxAdapter(child: _buildSearchBar()),
-              SliverToBoxAdapter(child: _buildScanBanner()),
-              SliverToBoxAdapter(child: _buildPromotionsBanner()),
-              SliverToBoxAdapter(child: _buildRecommendations()),
-              SliverToBoxAdapter(child: _buildSectionTitle('Restaurants')),
-              _buildRestaurantList(),
-            ],
-          ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Stack(
+              children: [
+                RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: CustomScrollView(
+                    slivers: [
+                      SliverToBoxAdapter(child: _buildHeader()),
+                      SliverToBoxAdapter(child: _buildSearchBar()),
+                      SliverToBoxAdapter(child: _buildScanBanner()),
+                      SliverToBoxAdapter(child: _buildPromotionsBanner()),
+                      SliverToBoxAdapter(child: _buildRecommendations()),
+                      SliverToBoxAdapter(child: _buildSectionTitle('Restaurants')),
+                      _buildRestaurantList(),
+                    ],
+                  ),
+                ),
+                FloatingCartButton(
+                  areaSize: constraints.biggest,
+                  onTap: _openCartSheet,
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -510,6 +558,124 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Thin wrapper so home_screen.dart doesn't need to import the activity
+/// tab's CartTab file directly — keeps this file's imports self-contained.
+class _CartSheetContent extends StatelessWidget {
+  const _CartSheetContent();
+
+  @override
+  Widget build(BuildContext context) {
+    return const _InlineCartTab();
+  }
+}
+
+class _InlineCartTab extends StatefulWidget {
+  const _InlineCartTab();
+
+  @override
+  State<_InlineCartTab> createState() => _InlineCartTabState();
+}
+
+class _InlineCartTabState extends State<_InlineCartTab> {
+  @override
+  Widget build(BuildContext context) {
+    final cart = Provider.of<CartProvider>(context);
+    final carts = cart.restaurantCarts;
+
+    if (carts.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.shopping_cart_outlined, size: 60, color: AppColors.textGrey),
+              SizedBox(height: 12),
+              Text('Your cart is empty', style: TextStyle(color: AppColors.textGrey, fontSize: 16)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: carts.length,
+      itemBuilder: (context, index) {
+        final myCart = carts[index];
+        return Card(
+          margin: const EdgeInsets.only(bottom: 16),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(myCart.restaurantName,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Divider(height: 20),
+                ...myCart.items.entries.map((entry) {
+                  final key = entry.key;
+                  final item = entry.value;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(item.displayName, style: const TextStyle(fontSize: 14)),
+                              Text('Rs. ${item.unitPrice.toStringAsFixed(0)} each',
+                                  style: const TextStyle(color: AppColors.textGrey, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          icon: const Icon(Icons.remove_circle_outline, size: 20),
+                          onPressed: () => cart.decrementByKey(myCart.restaurantId, key),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Text('${item.quantity}'),
+                        ),
+                        IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          icon: const Icon(Icons.add_circle_outline, size: 20, color: AppColors.primary),
+                          onPressed: () => cart.incrementByKey(myCart.restaurantId, key),
+                        ),
+                        SizedBox(
+                          width: 70,
+                          child: Text(
+                            'Rs. ${item.subtotal.toStringAsFixed(0)}',
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+                const Divider(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Subtotal', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    Text('Rs. ${myCart.totalAmount.toStringAsFixed(0)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

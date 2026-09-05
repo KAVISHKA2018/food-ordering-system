@@ -4,6 +4,7 @@ import '../../config/app_theme.dart';
 import '../../providers/cart_provider.dart';
 import 'active_sessions_tab.dart';
 import 'reservations_tab.dart';
+import 'cart_tab.dart';
 
 class ActivityHubScreen extends StatefulWidget {
   final int initialTabIndex;
@@ -31,6 +32,43 @@ class _ActivityHubScreenState extends State<ActivityHubScreen>
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _openCartSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return FractionallySizedBox(
+          heightFactor: 0.85,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Text('Your Cart', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+                const Expanded(child: CartTab()),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override

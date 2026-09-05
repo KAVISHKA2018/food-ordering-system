@@ -14,18 +14,23 @@ import 'screens/activity/activity_hub_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.init();
-  runApp(const MyApp());
+
+  final cartProvider = CartProvider();
+  await cartProvider.init(); // loads any previously saved cart from disk
+
+  runApp(MyApp(cartProvider: cartProvider));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final CartProvider cartProvider;
+  const MyApp({super.key, required this.cartProvider});
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
-        ChangeNotifierProvider(create: (_) => CartProvider()),
+        ChangeNotifierProvider.value(value: cartProvider),
       ],
       child: MaterialApp(
         navigatorKey: NotificationService.navigatorKey,

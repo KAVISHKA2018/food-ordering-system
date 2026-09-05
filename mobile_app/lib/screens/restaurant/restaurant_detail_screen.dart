@@ -634,7 +634,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                   },
                   icon: const Icon(Icons.shopping_cart, color: Colors.white),
                   label: Text(
-                    'View Cart (${myCart.itemCount}) · Rs. ${myCart.totalAmount.toStringAsFixed(0)}',
+                    'Checkout (${myCart.itemCount}) · Rs. ${myCart.totalAmount.toStringAsFixed(0)}',
                     style: const TextStyle(color: Colors.white),
                   ),
                 ),
