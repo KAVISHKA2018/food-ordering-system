@@ -146,6 +146,8 @@ class Payment(models.Model):
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     method = models.CharField(max_length=10, choices=Method.choices, default=Method.MOCK)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    gateway_reference = models.CharField(max_length=100, blank=True, default='')
+    gateway_payment_id = models.CharField(max_length=100, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     paid_at = models.DateTimeField(null=True, blank=True)
 

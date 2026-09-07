@@ -14,6 +14,11 @@ from pathlib import Path
 from decouple import config
 from datetime import timedelta
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -154,3 +159,12 @@ SIMPLE_JWT = {
 }
 
 CORS_ALLOW_ALL_ORIGINS = True  # fine for development, restrict this before going live
+
+# --- Stripe payment gateway (test mode) ---
+STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
+STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
+# Used for the success/cancel redirect URLs the WebView loads after
+# checkout — your phone's WebView just needs to reach this over WiFi,
+# unlike the webhook itself which needs true internet reachability
+# (handled separately by the Stripe CLI tunnel).
+PUBLIC_BASE_URL = 'http://192.168.1.5:8000'

@@ -41,6 +41,7 @@ class OrderSerializer(serializers.ModelSerializer):
     payment_status = serializers.SerializerMethodField()
     promotion_title = serializers.CharField(source='promotion.title', read_only=True, default=None)
     has_review = serializers.SerializerMethodField()
+    latest_payment_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -48,7 +49,7 @@ class OrderSerializer(serializers.ModelSerializer):
             'id', 'customer', 'customer_username', 'restaurant', 'restaurant_name', 'table_session', 'table_number',
             'order_type', 'status', 'delivery_address', 'contact_phone',
             'subtotal_amount', 'discount_amount', 'promotion', 'promotion_title', 'total_amount', 'notes',
-            'payment_status', 'has_review', 'items', 'created_at', 'updated_at'
+            'payment_status', 'has_review', 'latest_payment_id', 'items', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'customer', 'subtotal_amount', 'discount_amount', 'total_amount', 'created_at', 'updated_at']
 
@@ -57,6 +58,10 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def get_has_review(self, obj):
         return hasattr(obj, 'review')
+
+    def get_latest_payment_id(self, obj):
+        payment = obj.payments.order_by('-created_at').first()
+        return payment.id if payment else None
 
     def get_payment_status(self, obj):
         if obj.order_type == Order.OrderType.DINE_IN and obj.table_session:
@@ -79,10 +84,11 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     items = OrderItemCreateSerializer(many=True, write_only=True)
     table_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
     promo_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    payment_method = serializers.ChoiceField(choices=['CASH', 'CARD'], write_only=True, required=False, default='CASH')
 
     class Meta:
         model = Order
-        fields = ['id', 'restaurant', 'order_type', 'delivery_address', 'contact_phone', 'notes', 'items', 'table_number', 'promo_code']
+        fields = ['id', 'restaurant', 'order_type', 'delivery_address', 'contact_phone', 'notes', 'items', 'table_number', 'promo_code', 'payment_method']
         read_only_fields = ['id']
 
     def validate(self, data):
@@ -113,6 +119,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         items_data = validated_data.pop('items')
         table_number = normalize_table_number(validated_data.pop('table_number', ''))
         promo_code = (validated_data.pop('promo_code', '') or '').strip()
+        payment_method = validated_data.pop('payment_method', 'CASH')
         customer = self.context['request'].user
 
         table_session = None
@@ -180,14 +187,14 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         order.total_amount = subtotal - discount
         order.promotion = promotion
 
-        if order.order_type == Order.OrderType.TAKEAWAY:
+        if order.order_type in [Order.OrderType.TAKEAWAY, Order.OrderType.DELIVERY]:
             Payment.objects.create(
                 order=order,
                 amount=order.total_amount,
-                method=Payment.Method.MOCK,
+                method=Payment.Method.CASH if payment_method == 'CASH' else Payment.Method.CARD,
                 status=Payment.Status.PENDING,
             )
-            order.status = Order.Status.PAYMENT_PENDING
+            order.status = Order.Status.PAYMENT_PENDING if payment_method == 'CASH' else Order.Status.AWAITING_PAYMENT
 
         order.save()
         return order

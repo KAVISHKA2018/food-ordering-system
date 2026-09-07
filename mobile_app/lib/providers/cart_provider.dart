@@ -22,8 +22,6 @@ class CartItem {
       variant != null ? '${menuItem.name} (${variant!.name})' : menuItem.name;
 }
 
-/// One restaurant's cart. Multiple of these can exist at once — items from
-/// different restaurants are never mixed together.
 class RestaurantCartData {
   final int restaurantId;
   final String restaurantName;
@@ -49,8 +47,16 @@ class RestaurantCartData {
 class CartProvider extends ChangeNotifier {
   static const _storage = FlutterSecureStorage();
   static const _kCartStorageKey = 'cart_snapshot_v1';
+  static const _kAwaitingOrdersKey = 'cart_awaiting_orders_v1';
 
   final Map<int, RestaurantCartData> _restaurantCarts = {};
+
+  /// restaurantId -> orderId of an order that was created but never
+  /// successfully paid (e.g. a Card checkout that was abandoned). While
+  /// this exists for a restaurant, the customer must Pay Now or Cancel it
+  /// before a new order can be placed for that restaurant — this is what
+  /// prevents duplicate orders.
+  final Map<int, int> _awaitingOrderId = {};
 
   String? pendingTableNumber;
   bool isQRFlow = false;
@@ -62,63 +68,72 @@ class CartProvider extends ChangeNotifier {
     _initialized = true;
     try {
       final raw = await _storage.read(key: _kCartStorageKey);
-      if (raw == null || raw.isEmpty) return;
+      if (raw != null && raw.isNotEmpty) {
+        final List<dynamic> decoded = jsonDecode(raw);
+        for (final entry in decoded) {
+          final restaurantId = entry['restaurantId'] as int;
+          final restaurantName = entry['restaurantName'] as String;
+          final menuItemId = entry['menuItemId'] as int;
+          final menuItemName = entry['menuItemName'] as String;
+          final menuItemPrice = (entry['menuItemPrice'] as num).toDouble();
+          final menuItemImage = entry['menuItemImage'] as String?;
+          final variantId = entry['variantId'] as int?;
+          final variantName = entry['variantName'] as String?;
+          final variantPrice = entry['variantPrice'] != null
+              ? (entry['variantPrice'] as num).toDouble()
+              : null;
+          final quantity = entry['quantity'] as int;
+          final note = entry['note'] as String? ?? '';
 
-      final List<dynamic> decoded = jsonDecode(raw);
-      for (final entry in decoded) {
-        final restaurantId = entry['restaurantId'] as int;
-        final restaurantName = entry['restaurantName'] as String;
-        final menuItemId = entry['menuItemId'] as int;
-        final menuItemName = entry['menuItemName'] as String;
-        final menuItemPrice = (entry['menuItemPrice'] as num).toDouble();
-        final menuItemImage = entry['menuItemImage'] as String?;
-        final variantId = entry['variantId'] as int?;
-        final variantName = entry['variantName'] as String?;
-        final variantPrice = entry['variantPrice'] != null
-            ? (entry['variantPrice'] as num).toDouble()
-            : null;
-        final quantity = entry['quantity'] as int;
-        final note = entry['note'] as String? ?? '';
+          MenuItemVariantModel? variant;
+          List<MenuItemVariantModel> variants = [];
+          if (variantId != null) {
+            variant = MenuItemVariantModel(
+              id: variantId,
+              menuItemId: menuItemId,
+              name: variantName ?? '',
+              price: variantPrice ?? menuItemPrice,
+            );
+            variants = [variant];
+          }
 
-        MenuItemVariantModel? variant;
-        List<MenuItemVariantModel> variants = [];
-        if (variantId != null) {
-          variant = MenuItemVariantModel(
-            id: variantId,
-            menuItemId: menuItemId,
-            name: variantName ?? '',
-            price: variantPrice ?? menuItemPrice,
+          final menuItem = MenuItemModel(
+            id: menuItemId,
+            restaurantId: restaurantId,
+            name: menuItemName,
+            description: '',
+            price: menuItemPrice,
+            image: menuItemImage,
+            isAvailable: true,
+            isVegetarian: false,
+            stockQuantity: 9999,
+            variants: variants,
           );
-          variants = [variant];
+
+          final cart = _restaurantCarts.putIfAbsent(
+            restaurantId,
+            () => RestaurantCartData(restaurantId: restaurantId, restaurantName: restaurantName),
+          );
+          final key = _keyFor(menuItem, variant);
+          cart.items[key] = CartItem(menuItem: menuItem, variant: variant, quantity: quantity, note: note);
         }
-
-        final menuItem = MenuItemModel(
-          id: menuItemId,
-          restaurantId: restaurantId,
-          name: menuItemName,
-          description: '',
-          price: menuItemPrice,
-          image: menuItemImage,
-          isAvailable: true,
-          isVegetarian: false,
-          stockQuantity: 9999,
-          variants: variants,
-        );
-
-        final cart = _restaurantCarts.putIfAbsent(
-          restaurantId,
-          () => RestaurantCartData(restaurantId: restaurantId, restaurantName: restaurantName),
-        );
-        final key = _keyFor(menuItem, variant);
-        cart.items[key] = CartItem(menuItem: menuItem, variant: variant, quantity: quantity, note: note);
       }
+
+      final rawAwaiting = await _storage.read(key: _kAwaitingOrdersKey);
+      if (rawAwaiting != null && rawAwaiting.isNotEmpty) {
+        final Map<String, dynamic> decoded = jsonDecode(rawAwaiting);
+        decoded.forEach((key, value) {
+          _awaitingOrderId[int.parse(key)] = value as int;
+        });
+      }
+
       notifyListeners();
     } catch (_) {
-      // Corrupted or incompatible saved cart — start fresh rather than crash.
+      // Corrupted or incompatible saved data — start fresh rather than crash.
     }
   }
 
-  Future<void> _persist() async {
+  Future<void> _persistCart() async {
     final entries = <Map<String, dynamic>>[];
     for (final cart in _restaurantCarts.values) {
       for (final item in cart.items.values) {
@@ -139,14 +154,19 @@ class CartProvider extends ChangeNotifier {
     }
     try {
       await _storage.write(key: _kCartStorageKey, value: jsonEncode(entries));
-    } catch (_) {
-      // Best-effort persistence — a failed write shouldn't crash the app.
-    }
+    } catch (_) {}
+  }
+
+  Future<void> _persistAwaiting() async {
+    try {
+      final map = _awaitingOrderId.map((k, v) => MapEntry(k.toString(), v));
+      await _storage.write(key: _kAwaitingOrdersKey, value: jsonEncode(map));
+    } catch (_) {}
   }
 
   void _notifyAndPersist() {
     notifyListeners();
-    _persist(); // fire-and-forget
+    _persistCart();
   }
 
   List<RestaurantCartData> get restaurantCarts =>
@@ -254,5 +274,21 @@ class CartProvider extends ChangeNotifier {
     pendingTableNumber = null;
     isQRFlow = false;
     _notifyAndPersist();
+  }
+
+  // --- In-flight order tracking (prevents duplicate orders) ---
+
+  int? awaitingOrderIdFor(int restaurantId) => _awaitingOrderId[restaurantId];
+
+  void setAwaitingOrder(int restaurantId, int orderId) {
+    _awaitingOrderId[restaurantId] = orderId;
+    notifyListeners();
+    _persistAwaiting();
+  }
+
+  void clearAwaitingOrder(int restaurantId) {
+    _awaitingOrderId.remove(restaurantId);
+    notifyListeners();
+    _persistAwaiting();
   }
 }

@@ -13,14 +13,22 @@ class TableSessionService {
     throw Exception('Failed to load active table sessions');
   }
 
-  static Future<Map<String, dynamic>> paySession(int sessionId) async {
+  /// paymentMethod: 'CASH' (existing manual-confirm flow, unchanged) or
+  /// 'CARD' (returns a paymentId to open the gateway with — the session
+  /// stays open until the webhook confirms).
+  static Future<Map<String, dynamic>> paySession(int sessionId, {String paymentMethod = 'CASH'}) async {
     final response = await ApiService.post(
       '${ApiConfig.baseUrl}/table-sessions/$sessionId/pay/',
-      {},
+      {'payment_method': paymentMethod},
       auth: true,
     );
     if (response.statusCode == 200) {
-      return {'success': true, 'session': TableSessionModel.fromJson(jsonDecode(response.body))};
+      final data = jsonDecode(response.body);
+      return {
+        'success': true,
+        'session': TableSessionModel.fromJson(data),
+        'paymentId': data['payment_id'],
+      };
     }
     return {'success': false, 'error': jsonDecode(response.body)};
   }

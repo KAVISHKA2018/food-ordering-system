@@ -56,9 +56,11 @@ class OrderModel {
   final String notes;
   final List<OrderItemModel> items;
   final bool hasReview;
+  final int? latestPaymentId;
   final String createdAt;
 
   OrderModel({
+    this.latestPaymentId,
     required this.id,
     required this.restaurantId,
     required this.restaurantName,
@@ -102,6 +104,7 @@ class OrderModel {
           .map((i) => OrderItemModel.fromJson(i))
           .toList(),
       hasReview: json['has_review'] ?? false,
+      latestPaymentId: json['latest_payment_id'],
       createdAt: json['created_at'] ?? '',
     );
   }

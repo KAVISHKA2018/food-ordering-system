@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
 import '../../models/table_session_model.dart';
 import '../../models/order_model.dart';
@@ -9,7 +10,8 @@ import '../../services/review_service.dart';
 import '../../providers/cart_provider.dart';
 import '../restaurant/restaurant_detail_screen.dart';
 import '../orders/food_review_screen.dart';
-import '../../widgets/pin_input_pad.dart'; // reused only if needed elsewhere; harmless if unused
+import '../../widgets/payment_confirm_dialog.dart';
+import '../checkout/card_payment_webview_screen.dart';
 
 class ActiveSessionsTab extends StatefulWidget {
   final CartProvider cart;
@@ -24,6 +26,7 @@ class ActiveSessionsTabState extends State<ActiveSessionsTab> {
   late Future<List<OrderModel>> _ordersFuture;
   int? _payingSessionId;
   int? _loadingAddMoreId;
+  int? _actingOnOrderId;
 
   @override
   void initState() {
@@ -112,34 +115,253 @@ class ActiveSessionsTabState extends State<ActiveSessionsTab> {
     }
   }
 
-  Future<void> _payNow(TableSessionModel session) async {
+  Future<void> _payTableNow(TableSessionModel session) async {
+    String paymentMethod = 'CASH';
+
+    final chosen = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Pay Table Bill'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Table ${session.tableNumber} · ${session.restaurantName}',
+                      style: const TextStyle(color: AppColors.textGrey, fontSize: 13)),
+                  const SizedBox(height: 16),
+                  const Text('Payment Method', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  PaymentMethodSelector(
+                    selected: paymentMethod,
+                    onChanged: (value) => setDialogState(() => paymentMethod = value),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, paymentMethod),
+                  child: const Text('Continue'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (chosen == null) return;
+
+    if (!mounted) return;
+    final confirmed = await showPaymentConfirmDialog(
+      context: context,
+      restaurantName: session.restaurantName,
+      orderTypeLabel: 'Dine-In',
+      totalAmount: session.totalAmount,
+      paymentMethodLabel: chosen == 'CASH' ? 'Cash' : 'Card',
+    );
+    if (!confirmed) return;
+
+    setState(() => _payingSessionId = session.id);
+    final result = await TableSessionService.paySession(session.id, paymentMethod: chosen);
+    setState(() => _payingSessionId = null);
+
+    if (!mounted) return;
+
+    if (!result['success']) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Payment request failed. Please try again.')),
+      );
+      return;
+    }
+
+    if (chosen == 'CASH') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Payment requested. Please pay at the counter.')),
+      );
+      refresh();
+      return;
+    }
+
+    final paymentId = result['paymentId'];
+    if (paymentId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not start payment. Please try again.')),
+      );
+      return;
+    }
+
+    final sessionResult = await OrderService.createCheckoutSession(paymentId);
+    if (!mounted) return;
+
+    if (!sessionResult['success']) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(sessionResult['error'].toString())),
+      );
+      return;
+    }
+
+    final paid = await Navigator.push<bool?>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CardPaymentWebViewScreen(
+          checkoutUrl: sessionResult['checkoutUrl'],
+          paymentId: paymentId,
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(paid == true
+          ? 'Payment successful! Thank you.'
+          : 'Payment was not completed. You can try again from "Pay Now".')),
+    );
+    refresh();
+  }
+
+  // --- Order-level actions (Takeaway / Delivery) ---
+
+  Future<void> _payNowForOrder(OrderModel order) async {
+    if (order.latestPaymentId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No payment found for this order.')),
+      );
+      return;
+    }
+
+    String paymentMethod = 'CARD';
+    final chosen = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('Pay Order #${order.id}'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${order.restaurantName} · Rs. ${order.totalAmount.toStringAsFixed(0)}',
+                      style: const TextStyle(color: AppColors.textGrey, fontSize: 13)),
+                  const SizedBox(height: 16),
+                  const Text('Payment Method', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  PaymentMethodSelector(
+                    selected: paymentMethod,
+                    onChanged: (value) => setDialogState(() => paymentMethod = value),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, paymentMethod),
+                  child: const Text('Continue'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (chosen == null) return;
+
+    if (chosen == 'CASH') {
+      setState(() => _actingOnOrderId = order.id);
+      final result = await OrderService.requestCashForOrder(order.id);
+      setState(() => _actingOnOrderId = null);
+
+      if (!mounted) return;
+      if (result['success']) {
+        widget.cart.clearAwaitingOrder(order.restaurantId);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please pay at the counter. Your order is now pending confirmation.')),
+        );
+        refresh();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['error'].toString())),
+        );
+      }
+      return;
+    }
+
+    // Card — same as before.
+    setState(() => _actingOnOrderId = order.id);
+    final sessionResult = await OrderService.createCheckoutSession(order.latestPaymentId!);
+    setState(() => _actingOnOrderId = null);
+
+    if (!mounted) return;
+    if (!sessionResult['success']) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(sessionResult['error'].toString())),
+      );
+      return;
+    }
+
+    final paid = await Navigator.push<bool?>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CardPaymentWebViewScreen(
+          checkoutUrl: sessionResult['checkoutUrl'],
+          paymentId: order.latestPaymentId!,
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+
+    if (paid == true) {
+      widget.cart.clearAwaitingOrder(order.restaurantId);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Payment successful!')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Payment was not completed. You can try again anytime.')),
+      );
+    }
+    refresh();
+  }
+
+  Future<void> _cancelOrder(OrderModel order) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Confirm Payment'),
-        content: Text(
-          'Pay Rs. ${session.totalAmount.toStringAsFixed(0)} for Table ${session.tableNumber} at ${session.restaurantName}?\n\n'
-          'You will pay at the counter — the restaurant will confirm once received.',
-        ),
+        title: const Text('Cancel Order'),
+        content: Text('Are you sure you want to cancel order #${order.id}?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Pay Now')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yes, Cancel', style: TextStyle(color: Colors.red)),
+          ),
         ],
       ),
     );
     if (confirmed != true) return;
 
-    setState(() => _payingSessionId = session.id);
-    final result = await TableSessionService.paySession(session.id);
-    setState(() => _payingSessionId = null);
+    setState(() => _actingOnOrderId = order.id);
+    final result = await OrderService.cancelOrder(order.id);
+    setState(() => _actingOnOrderId = null);
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result['success']
-          ? 'Payment requested. Please pay at the counter.'
-          : 'Payment request failed. Please try again.')),
-    );
-    refresh();
+
+    if (result['success']) {
+      widget.cart.clearAwaitingOrder(order.restaurantId);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Order cancelled.')),
+      );
+      refresh();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['error'].toString())),
+      );
+    }
   }
 
   Future<void> _showRatingDialog(OrderModel order) async {
@@ -246,9 +468,18 @@ class ActiveSessionsTabState extends State<ActiveSessionsTab> {
     final isPaymentPending = session.status == 'PAYMENT_PENDING';
     final isPaying = _payingSessionId == session.id;
     final isAddingMore = _loadingAddMoreId == session.id;
+    final accentColor = isPaymentPending ? Colors.deepOrange : AppColors.primary;
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(
+        color: accentColor.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border(left: BorderSide(color: accentColor, width: 4)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1)),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -339,7 +570,7 @@ class ActiveSessionsTabState extends State<ActiveSessionsTab> {
                     child: isPaying
                         ? const Center(child: CircularProgressIndicator())
                         : ElevatedButton(
-                            onPressed: () => _payNow(session),
+                            onPressed: () => _payTableNow(session),
                             style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 10)),
                             child: const Text('Pay Now', style: TextStyle(fontSize: 12)),
                           ),
@@ -353,8 +584,21 @@ class ActiveSessionsTabState extends State<ActiveSessionsTab> {
   }
 
   Widget _activeOrderCard(OrderModel order) {
-    return Card(
+    final accentColor = _statusColor(order.status);
+    final isActing = _actingOnOrderId == order.id;
+    final isAwaitingPayment = order.status == 'AWAITING_PAYMENT';
+    final isCancellable = ['AWAITING_PAYMENT', 'PAYMENT_PENDING', 'PENDING'].contains(order.status);
+
+    return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(
+        color: accentColor.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border(left: BorderSide(color: accentColor, width: 4)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1)),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -413,6 +657,37 @@ class ActiveSessionsTabState extends State<ActiveSessionsTab> {
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
               ],
             ),
+            if (isCancellable) ...[
+              const SizedBox(height: 10),
+              if (isActing)
+                const Center(child: CircularProgressIndicator())
+              else
+                Row(
+                  children: [
+                    if (isAwaitingPayment) ...[
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => _payNowForOrder(order),
+                          style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 10)),
+                          child: const Text('Pay Now', style: TextStyle(fontSize: 12)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => _cancelOrder(order),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                        child: const Text('Cancel', style: TextStyle(fontSize: 12)),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
           ],
         ),
       ),
@@ -420,8 +695,13 @@ class ActiveSessionsTabState extends State<ActiveSessionsTab> {
   }
 
   Widget _pastOrderCard(OrderModel order) {
-    return Card(
+    return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE0E0E0)),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -446,11 +726,11 @@ class ActiveSessionsTabState extends State<ActiveSessionsTab> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.15),
+                    color: AppColors.textGrey.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Text('Completed',
-                      style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.w600)),
+                  child: Text('Completed',
+                      style: TextStyle(color: AppColors.textGrey, fontSize: 11, fontWeight: FontWeight.w600)),
                 ),
               ],
             ),

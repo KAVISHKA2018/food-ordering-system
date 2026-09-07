@@ -13,6 +13,7 @@ class OrderService {
     String tableNumber = '',
     String notes = '',
     String promoCode = '',
+    String paymentMethod = 'CASH',
   }) async {
     final body = {
       'restaurant': restaurantId,
@@ -21,6 +22,7 @@ class OrderService {
       'contact_phone': contactPhone,
       'notes': notes,
       'items': items,
+      'payment_method': paymentMethod,
     };
     if (orderType == 'DINE_IN') {
       body['table_number'] = tableNumber;
@@ -63,5 +65,60 @@ class OrderService {
       return data.map((json) => OrderModel.fromJson(json)).toList();
     }
     throw Exception('Failed to load orders');
+  }
+
+  /// Creates a Stripe Checkout session for a pending payment and returns
+  /// the hosted checkout URL to load in a WebView.
+  static Future<Map<String, dynamic>> createCheckoutSession(int paymentId) async {
+    final response = await ApiService.post(
+      '${ApiConfig.baseUrl}/payments/$paymentId/create-checkout-session/',
+      {},
+      auth: true,
+    );
+    final data = jsonDecode(response.body);
+    if (response.statusCode == 200) {
+      return {'success': true, 'checkoutUrl': data['checkout_url']};
+    }
+    return {'success': false, 'error': data['detail'] ?? 'Could not start payment.'};
+  }
+
+  /// Polled after the customer returns from the Stripe checkout page —
+  /// only this (backed by the webhook) is trusted to confirm payment,
+  /// never the browser redirect alone.
+  static Future<String?> getPaymentStatus(int paymentId) async {
+    final response = await ApiService.get(
+      '${ApiConfig.baseUrl}/payments/$paymentId/status/',
+      auth: true,
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body)['status'];
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>> cancelOrder(int orderId) async {
+    final response = await ApiService.post(
+      '${ApiConfig.orders}$orderId/cancel/',
+      {},
+      auth: true,
+    );
+    if (response.statusCode == 200) {
+      return {'success': true, 'order': OrderModel.fromJson(jsonDecode(response.body))};
+    }
+    final data = jsonDecode(response.body);
+    return {'success': false, 'error': data['detail'] ?? 'Could not cancel order.'};
+  }
+
+  static Future<Map<String, dynamic>> requestCashForOrder(int orderId) async {
+    final response = await ApiService.post(
+      '${ApiConfig.orders}$orderId/request_cash/',
+      {},
+      auth: true,
+    );
+    if (response.statusCode == 200) {
+      return {'success': true, 'order': OrderModel.fromJson(jsonDecode(response.body))};
+    }
+    final data = jsonDecode(response.body);
+    return {'success': false, 'error': data['detail'] ?? 'Could not switch to cash.'};
   }
 }
