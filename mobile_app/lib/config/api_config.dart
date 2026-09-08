@@ -23,6 +23,7 @@ class ApiConfig {
   static const String enablePin = '$baseUrl/accounts/enable-pin/';
   static const String disablePin = '$baseUrl/accounts/disable-pin/';
   static const String loginWithPin = '$baseUrl/accounts/login-with-pin/';
+  static const String changePhoneNumber = '$baseUrl/accounts/change-phone-number/';
 
   static String imageUrl(String? path) {
     if (path == null || path.isEmpty) return '';

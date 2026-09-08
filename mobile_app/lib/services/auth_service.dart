@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:io';
+import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/api_config.dart';
 import 'api_service.dart';
@@ -10,7 +12,8 @@ class AuthService {
   static const _kRememberedName = 'remembered_first_name';
   static const _kRememberedPinEnabled = 'remembered_pin_enabled';
 
-  // --- OTP: used ONLY to verify a phone number during registration ---
+  // --- OTP: used to verify a phone number, both during registration AND
+  // when a customer wants to change their phone number from Profile ---
 
   static Future<Map<String, dynamic>> requestOtp(String phoneNumber) async {
     try {
@@ -158,25 +161,80 @@ class AuthService {
     }
   }
 
-  // --- Profile update (unrelated to auth flow, kept for the Profile screen) ---
+  // --- Profile update: name / email / address / profile picture.
+  // NOTE: phone_number is deliberately NOT handled here — the backend
+  // ignores it on this endpoint. See changePhoneNumber() below, which is
+  // the only way to actually change it (requires a verified OTP). ---
 
   static Future<Map<String, dynamic>> updateProfile({
+    String? firstName,
+    String? lastName,
     String? email,
-    String? phoneNumber,
+    String? address,
+    File? profilePicture,
   }) async {
     try {
-      final body = <String, dynamic>{};
-      if (email != null) body['email'] = email;
-      if (phoneNumber != null) body['phone_number'] = phoneNumber;
+      if (profilePicture != null) {
+        final token = await ApiService.getAccessToken();
+        final uri = Uri.parse(ApiConfig.me);
+        final request = http.MultipartRequest('PATCH', uri);
+        request.headers['Authorization'] = 'Bearer $token';
+        if (firstName != null) request.fields['first_name'] = firstName;
+        if (lastName != null) request.fields['last_name'] = lastName;
+        if (email != null) request.fields['email'] = email;
+        if (address != null) request.fields['address'] = address;
+        request.files.add(await http.MultipartFile.fromPath('profile_picture', profilePicture.path));
 
-      final response = await ApiService.patch(ApiConfig.me, body)
-          .timeout(const Duration(seconds: 10));
+        final streamedResponse = await request.send().timeout(const Duration(seconds: 20));
+        final response = await http.Response.fromStream(streamedResponse);
+        final data = jsonDecode(response.body);
+
+        if (response.statusCode == 200) {
+          return {'success': true, 'user': data};
+        }
+        return {'success': false, 'error': 'Update failed.'};
+      } else {
+        final body = <String, dynamic>{};
+        if (firstName != null) body['first_name'] = firstName;
+        if (lastName != null) body['last_name'] = lastName;
+        if (email != null) body['email'] = email;
+        if (address != null) body['address'] = address;
+
+        final response = await ApiService.patch(ApiConfig.me, body)
+            .timeout(const Duration(seconds: 10));
+        final data = jsonDecode(response.body);
+
+        if (response.statusCode == 200) {
+          return {'success': true, 'user': data};
+        }
+        return {'success': false, 'error': 'Update failed.'};
+      }
+    } on TimeoutException {
+      return {'success': false, 'error': 'Connection timed out.'};
+    } catch (e) {
+      return {'success': false, 'error': 'Could not connect to server: $e'};
+    }
+  }
+
+  // --- Change phone number: requires a recently-verified OTP for the new
+  // number (obtained via requestOtp/verifyOtp above, same as registration) ---
+
+  static Future<Map<String, dynamic>> changePhoneNumber(String newPhoneNumber) async {
+    try {
+      final response = await ApiService.post(
+        ApiConfig.changePhoneNumber,
+        {'phone_number': newPhoneNumber},
+        auth: true,
+      ).timeout(const Duration(seconds: 10));
       final data = jsonDecode(response.body);
-
       if (response.statusCode == 200) {
+        // Keep the device-remembered phone number in sync — otherwise
+        // PIN/password-only quick-login would look up the OLD number
+        // next time and silently fail.
+        await _saveRememberedUser(data);
         return {'success': true, 'user': data};
       }
-      return {'success': false, 'error': 'Update failed.'};
+      return {'success': false, 'error': data['detail'] ?? 'Could not change phone number.'};
     } on TimeoutException {
       return {'success': false, 'error': 'Connection timed out.'};
     } catch (e) {
@@ -233,11 +291,6 @@ class AuthService {
     }
   }
 
-  /// Logs out of the current session but deliberately keeps the
-  /// device-remembered identity (phone/name/pinEnabled) so a returning
-  /// customer who had PIN login enabled still gets the quick "Welcome
-  /// back" PIN screen next time, rather than being dropped back to a
-  /// blank password form. Use [forgetDevice] for a full "switch account".
   static Future<void> logout() async {
     await ApiService.clearTokens();
   }

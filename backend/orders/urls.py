@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     OrderViewSet, TableSessionViewSet,
     CreateCheckoutSessionView, StripeWebhookView, StripeReturnView, StripeCancelView,
-    PaymentStatusView,
+    PaymentStatusView, ReportsView,
 )
 
 router = DefaultRouter()
@@ -17,4 +17,5 @@ urlpatterns = [
     path('stripe-return/', StripeReturnView.as_view(), name='stripe-return'),
     path('stripe-cancel/', StripeCancelView.as_view(), name='stripe-cancel'),
     path('payments/<int:payment_id>/status/', PaymentStatusView.as_view(), name='payment-status'),
+    path('reports/', ReportsView.as_view(), name='reports'),
 ]

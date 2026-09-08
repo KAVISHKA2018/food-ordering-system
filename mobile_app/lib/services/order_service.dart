@@ -9,7 +9,10 @@ class OrderService {
     required String orderType,
     required List<Map<String, dynamic>> items,
     String deliveryAddress = '',
+    double? deliveryLatitude,
+    double? deliveryLongitude,
     String contactPhone = '',
+    String alternativePhone = '',
     String tableNumber = '',
     String notes = '',
     String promoCode = '',
@@ -20,10 +23,15 @@ class OrderService {
       'order_type': orderType,
       'delivery_address': deliveryAddress,
       'contact_phone': contactPhone,
+      'alternative_phone': alternativePhone,
       'notes': notes,
       'items': items,
       'payment_method': paymentMethod,
     };
+    if (deliveryLatitude != null && deliveryLongitude != null) {
+      body['delivery_latitude'] = deliveryLatitude;
+      body['delivery_longitude'] = deliveryLongitude;
+    }
     if (orderType == 'DINE_IN') {
       body['table_number'] = tableNumber;
     }

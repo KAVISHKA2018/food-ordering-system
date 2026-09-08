@@ -29,5 +29,11 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
-            'role', 'phone_number', 'nic', 'address', 'pin_enabled', 'created_at'
+            'role', 'phone_number', 'nic', 'address', 'profile_picture',
+            'pin_enabled', 'created_at'
         ]
+        # phone_number is intentionally read-only here — changing it must
+        # go through ChangePhoneNumberView, which requires a verified OTP.
+        # A plain PATCH to /me/ can freely update name/address/email/photo,
+        # but any phone_number in that request body is silently ignored.
+        read_only_fields = ['phone_number']

@@ -7,6 +7,7 @@ import '../../services/api_service.dart';
 import '../../widgets/pin_input_pad.dart';
 import '../home/home_screen.dart';
 import 'register_screen.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 
 enum _LoginMode { pin, passwordOnly, full }
 
@@ -44,6 +45,12 @@ class _LoginScreenState extends State<LoginScreen> {
     final remembered = await AuthService.getRememberedUser();
     final storedToken = await ApiService.getAccessToken();
     final stillLoggedIn = storedToken != null && storedToken.isNotEmpty;
+
+    // Dismiss the native splash only now, right as we're about to show
+    // real content — this is what makes it feel like ONE continuous
+    // screen (same logo, same orange background) instead of a native
+    // splash handing off to a separate Flutter loading screen.
+    FlutterNativeSplash.remove();
 
     if (!mounted) return;
 
@@ -167,7 +174,9 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     if (_checkingDevice) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      // Nothing meaningful to show here — the native splash (still
+      // preserved at this point) is covering the screen entirely.
+      return const Scaffold(backgroundColor: Color(0xFFE8865A));
     }
 
     final auth = Provider.of<AuthProvider>(context);
@@ -323,12 +332,6 @@ class _LoginScreenState extends State<LoginScreen> {
         'Welcome back, $_rememberedName!',
         textAlign: TextAlign.center,
         style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-      ),
-      const SizedBox(height: 6),
-      Text(
-        _rememberedPhone ?? '',
-        textAlign: TextAlign.center,
-        style: const TextStyle(color: AppColors.textGrey, fontSize: 14),
       ),
       const SizedBox(height: 8),
       const Text(

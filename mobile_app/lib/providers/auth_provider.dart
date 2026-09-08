@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
@@ -122,12 +123,46 @@ class AuthProvider extends ChangeNotifier {
     return false;
   }
 
-  Future<bool> updateProfile({String? email, String? phoneNumber}) async {
+  /// Updates name / email / address / profile picture. Phone number is
+  /// intentionally NOT handled here — use changePhoneNumber() instead,
+  /// which requires a verified OTP.
+  Future<bool> updateProfile({
+    String? firstName,
+    String? lastName,
+    String? email,
+    String? address,
+    File? profilePicture,
+  }) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
-    final result = await AuthService.updateProfile(email: email, phoneNumber: phoneNumber);
+    final result = await AuthService.updateProfile(
+      firstName: firstName,
+      lastName: lastName,
+      email: email,
+      address: address,
+      profilePicture: profilePicture,
+    );
+
+    if (result['success']) {
+      _user = result['user'];
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    }
+    _errorMessage = result['error'];
+    _isLoading = false;
+    notifyListeners();
+    return false;
+  }
+
+  Future<bool> changePhoneNumber(String newPhoneNumber) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    final result = await AuthService.changePhoneNumber(newPhoneNumber);
 
     if (result['success']) {
       _user = result['user'];

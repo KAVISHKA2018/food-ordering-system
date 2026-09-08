@@ -15,6 +15,11 @@ from .permissions import IsOrderOwnerOrRestaurantStaff
 from .stripe_gateway import create_checkout_session
 from notifications.fcm import send_push_notification
 
+from django.db.models import Sum, Count
+from django.db.models.functions import TruncDate
+from datetime import datetime, timedelta
+from .models import Order, TableSession, Payment, OrderItem
+
 
 def _complete_order_payment(payment):
     order = payment.order
@@ -367,3 +372,101 @@ class PaymentStatusView(APIView):
         if target.customer != request.user:
             return Response({"detail": "Not yours."}, status=status.HTTP_403_FORBIDDEN)
         return Response({"status": payment.status})
+
+
+class ReportsView(APIView):
+    """Aggregated sales/analytics data for the restaurant admin's own
+    restaurant, filterable by date range. One endpoint returns everything
+    the Reports page needs, to avoid multiple round trips."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    # Orders that have actually been paid for — used for revenue figures.
+    # Orders still at AWAITING_PAYMENT/PAYMENT_PENDING haven't been paid
+    # yet, and CANCELLED orders were never fulfilled.
+    PAID_STATUSES = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY', 'COMPLETED']
+
+    def get(self, request):
+        if request.user.role != 'RESTAURANT_ADMIN':
+            return Response({"detail": "Only restaurant admins can view reports."}, status=status.HTTP_403_FORBIDDEN)
+
+        start_str = request.query_params.get('start_date')
+        end_str = request.query_params.get('end_date')
+        try:
+            end_date = datetime.strptime(end_str, '%Y-%m-%d').date() if end_str else timezone.now().date()
+            start_date = datetime.strptime(start_str, '%Y-%m-%d').date() if start_str else end_date - timedelta(days=29)
+        except ValueError:
+            return Response({"detail": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+
+        qs = Order.objects.filter(
+            restaurant__owner=request.user,
+            created_at__date__gte=start_date,
+            created_at__date__lte=end_date,
+        )
+        paid_qs = qs.filter(status__in=self.PAID_STATUSES)
+
+        revenue_by_day = (
+            paid_qs.annotate(day=TruncDate('created_at'))
+            .values('day')
+            .annotate(revenue=Sum('total_amount'))
+            .order_by('day')
+        )
+
+        volume_by_day = (
+            qs.annotate(day=TruncDate('created_at'))
+            .values('day')
+            .annotate(order_count=Count('id'), unique_customers=Count('customer', distinct=True))
+            .order_by('day')
+        )
+
+        status_breakdown = qs.values('status').annotate(count=Count('id')).order_by('-count')
+
+        payments_qs = Payment.objects.filter(
+            order__restaurant__owner=request.user,
+            order__created_at__date__gte=start_date,
+            order__created_at__date__lte=end_date,
+            status='COMPLETED',
+        )
+        payment_breakdown = payments_qs.values('method').annotate(
+            count=Count('id'), total=Sum('amount')
+        ).order_by('-total')
+
+        top_items = (
+            OrderItem.objects.filter(
+                order__restaurant__owner=request.user,
+                order__created_at__date__gte=start_date,
+                order__created_at__date__lte=end_date,
+                order__status__in=self.PAID_STATUSES,
+            )
+            .values('item_name')
+            .annotate(quantity_sold=Sum('quantity'), revenue=Sum('subtotal'))
+            .order_by('-quantity_sold')[:10]
+        )
+
+        summary = paid_qs.aggregate(total_revenue=Sum('total_amount'), total_orders=Count('id'))
+        total_revenue = summary['total_revenue'] or 0
+        total_orders = summary['total_orders'] or 0
+        avg_order_value = (total_revenue / total_orders) if total_orders else 0
+
+        return Response({
+            'start_date': str(start_date),
+            'end_date': str(end_date),
+            'revenue_by_day': [{'date': str(r['day']), 'revenue': float(r['revenue'] or 0)} for r in revenue_by_day],
+            'volume_by_day': [
+                {'date': str(v['day']), 'order_count': v['order_count'], 'unique_customers': v['unique_customers']}
+                for v in volume_by_day
+            ],
+            'status_breakdown': [{'status': s['status'], 'count': s['count']} for s in status_breakdown],
+            'payment_breakdown': [
+                {'method': p['method'], 'count': p['count'], 'total': float(p['total'] or 0)}
+                for p in payment_breakdown
+            ],
+            'top_items': [
+                {'item_name': i['item_name'], 'quantity_sold': i['quantity_sold'], 'revenue': float(i['revenue'] or 0)}
+                for i in top_items
+            ],
+            'summary': {
+                'total_revenue': float(total_revenue),
+                'total_orders': total_orders,
+                'avg_order_value': round(float(avg_order_value), 2),
+            },
+        })

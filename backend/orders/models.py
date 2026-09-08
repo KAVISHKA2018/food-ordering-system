@@ -82,12 +82,15 @@ class Order(models.Model):
         related_name='orders'
     )
     delivery_address = models.CharField(max_length=255, blank=True)
+    delivery_latitude = models.FloatField(null=True, blank=True)
+    delivery_longitude = models.FloatField(null=True, blank=True)
     contact_phone = models.CharField(max_length=20, blank=True)
+    alternative_phone = models.CharField(max_length=20, blank=True)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
+    
     def __str__(self):
         return f"Order #{self.id} - {self.customer.username} - {self.restaurant.name}"
 

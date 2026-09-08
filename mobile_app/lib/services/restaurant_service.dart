@@ -33,4 +33,16 @@ class RestaurantService {
     }
     throw Exception('Failed to search menu items');
   }
+
+  static Future<List<RestaurantModel>> searchRestaurants(String query) async {
+    final response = await ApiService.get(
+      '${ApiConfig.restaurants}search/?q=${Uri.encodeQueryComponent(query)}',
+      auth: false,
+    );
+    if (response.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.map((json) => RestaurantModel.fromJson(json)).toList();
+    }
+    throw Exception('Failed to search restaurants');
+  }
 }

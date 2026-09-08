@@ -3,7 +3,8 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .views import (
     RegisterView, MeView, RequestOTPView, VerifyOTPView,
     RegisterWithDetailsView, LoginWithPasswordView,
-    EnablePinView, DisablePinView, LoginWithPINView
+    EnablePinView, DisablePinView, LoginWithPINView,
+    ChangePhoneNumberView,
 )
 
 urlpatterns = [
@@ -20,4 +21,6 @@ urlpatterns = [
     path('enable-pin/', EnablePinView.as_view(), name='enable-pin'),
     path('disable-pin/', DisablePinView.as_view(), name='disable-pin'),
     path('login-with-pin/', LoginWithPINView.as_view(), name='login-with-pin'),
+
+    path('change-phone-number/', ChangePhoneNumberView.as_view(), name='change-phone-number'),
 ]

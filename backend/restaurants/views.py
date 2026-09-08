@@ -1,4 +1,5 @@
 import qrcode
+from django.db.models import Q
 from io import BytesIO
 from django.http import HttpResponse
 from rest_framework import viewsets, permissions
@@ -72,6 +73,16 @@ class RestaurantViewSet(viewsets.ModelViewSet):
         response = HttpResponse(buffer.getvalue(), content_type="image/png")
         response['Content-Disposition'] = f'inline; filename="restaurant_{restaurant.id}_qr.png"'
         return response
+
+    @action(detail=False, methods=['get'])
+    def search(self, request):
+        query = request.query_params.get('q', '').strip()
+        if not query:
+            return Response([])
+        results = self.get_queryset().filter(
+            Q(name__icontains=query) | Q(description__icontains=query) | Q(address__icontains=query)
+        )
+        return Response(RestaurantSerializer(results, many=True).data)
 
 
 class CategoryViewSet(viewsets.ModelViewSet):

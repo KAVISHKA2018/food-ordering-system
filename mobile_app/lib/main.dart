@@ -11,8 +11,11 @@ import 'screens/auth/login_screen.dart';
 
 import 'screens/activity/activity_hub_screen.dart';
 
+import 'package:flutter_native_splash/flutter_native_splash.dart';
+
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   await NotificationService.init();
 
   final cartProvider = CartProvider();

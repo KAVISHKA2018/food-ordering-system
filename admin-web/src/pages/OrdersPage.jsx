@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import orderService from '../services/orderService';
+import DeliveryLocationMap from '../components/DeliveryLocationMap';
 
 const STATUS_COLORS = {
   AWAITING_PAYMENT: '#E53935',
@@ -160,11 +161,30 @@ export default function OrdersPage() {
 
                   {order.order_type === 'DELIVERY' && (order.delivery_address || order.contact_phone) && (
                     <div style={styles.deliveryBox}>
-                      {order.delivery_address && <p style={styles.smallNote}>📍 {order.delivery_address}</p>}
-                      {order.contact_phone && <p style={styles.smallNote}>📞 {order.contact_phone}</p>}
+                      {order.delivery_address && <p style={styles.smallNote}>Address: {order.delivery_address}</p>}
+                      {order.contact_phone && <p style={styles.smallNote}>Phone: {order.contact_phone}</p>}
+                      {order.alternative_phone && <p style={styles.smallNote}>Phone 2: (Alt) {order.alternative_phone}</p>}
+                      {order.delivery_latitude && order.delivery_longitude && (
+                        <div style={{ marginTop: '8px' }}>
+                          <DeliveryLocationMap
+                            latitude={order.delivery_latitude}
+                            longitude={order.delivery_longitude}
+                            orderId={order.id}
+                          />
+
+                          <a                            
+                            href={`https://www.openstreetmap.org/?mlat=${order.delivery_latitude}&mlon=${order.delivery_longitude}#map=17/${order.delivery_latitude}/${order.delivery_longitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={styles.mapLink}
+                          >
+                            🗺️ Open Full Map
+                          </a>
+                        </div>
+                      )}
                     </div>
                   )}
-
+                  
                   <div style={styles.itemsList}>
                     {order.items.map((item) => (
                       <div key={item.id} style={styles.itemRow}>
@@ -196,6 +216,12 @@ export default function OrdersPage() {
                     <strong>Total</strong>
                     <strong>Rs. {parseFloat(order.total_amount).toFixed(0)}</strong>
                   </div>
+
+                  {order.payment_method && (
+                    <p style={styles.smallNote}>
+                      {order.payment_method === 'CARD' ? '💳 Card Payment' : '💵 Cash Payment'}
+                    </p>
+                  )}
 
                   {order.order_type === 'TAKEAWAY' && (
                     <p style={{ ...styles.smallNote, fontWeight: 600 }}>
@@ -282,5 +308,12 @@ const styles = {
   },
   promoNote: {
     fontSize: '12px', color: '#E8865A', margin: '6px 0', fontWeight: 600,
+  },
+  mapEmbed: {
+    border: 0, borderRadius: '8px', marginBottom: '6px', display: 'block',
+  },
+  mapLink: {
+    display: 'inline-block', marginTop: '4px', fontSize: '12px', color: '#2196F3',
+    fontWeight: 600, textDecoration: 'none',
   },
 };

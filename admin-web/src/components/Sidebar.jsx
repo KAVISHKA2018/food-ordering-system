@@ -113,6 +113,7 @@ export default function Sidebar() {
           </NavLink>
           <NavLink to="/promotions" style={linkStyle}>Promotions</NavLink>
           <NavLink to="/reviews" style={linkStyle}>Reviews</NavLink>
+          <NavLink to="/reports" style={linkStyle}>Reports</NavLink>
         </nav>
       </div>
 

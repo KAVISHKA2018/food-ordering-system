@@ -9,6 +9,7 @@ import ReservationsPage from './pages/ReservationsPage';
 import TablesPage from './pages/TablesPage';
 import PromotionsPage from './pages/PromotionsPage';
 import ReviewsPage from './pages/ReviewsPage';
+import ReportsPage from './pages/ReportsPage';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/promotions" element={<ProtectedRoute><PromotionsPage /></ProtectedRoute>} />
           <Route path="/reviews" element={<ProtectedRoute><ReviewsPage /></ProtectedRoute>} />
+          <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

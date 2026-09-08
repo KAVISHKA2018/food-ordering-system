@@ -42,14 +42,15 @@ class OrderSerializer(serializers.ModelSerializer):
     promotion_title = serializers.CharField(source='promotion.title', read_only=True, default=None)
     has_review = serializers.SerializerMethodField()
     latest_payment_id = serializers.SerializerMethodField()
+    payment_method = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
         fields = [
             'id', 'customer', 'customer_username', 'restaurant', 'restaurant_name', 'table_session', 'table_number',
-            'order_type', 'status', 'delivery_address', 'contact_phone',
+            'order_type', 'status', 'delivery_address', 'delivery_latitude', 'delivery_longitude', 'contact_phone', 'alternative_phone',
             'subtotal_amount', 'discount_amount', 'promotion', 'promotion_title', 'total_amount', 'notes',
-            'payment_status', 'has_review', 'latest_payment_id', 'items', 'created_at', 'updated_at'
+            'payment_status', 'has_review', 'latest_payment_id', 'payment_method', 'items', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'customer', 'subtotal_amount', 'discount_amount', 'total_amount', 'created_at', 'updated_at']
 
@@ -62,6 +63,10 @@ class OrderSerializer(serializers.ModelSerializer):
     def get_latest_payment_id(self, obj):
         payment = obj.payments.order_by('-created_at').first()
         return payment.id if payment else None
+
+    def get_payment_method(self, obj):
+        payment = obj.payments.order_by('-created_at').first()
+        return payment.method if payment else None
 
     def get_payment_status(self, obj):
         if obj.order_type == Order.OrderType.DINE_IN and obj.table_session:
@@ -88,7 +93,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Order
-        fields = ['id', 'restaurant', 'order_type', 'delivery_address', 'contact_phone', 'notes', 'items', 'table_number', 'promo_code', 'payment_method']
+        fields = ['id', 'restaurant', 'order_type', 'delivery_address', 'delivery_latitude', 'delivery_longitude', 'contact_phone', 'alternative_phone', 'notes', 'items', 'table_number', 'promo_code', 'payment_method']
         read_only_fields = ['id']
 
     def validate(self, data):

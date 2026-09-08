@@ -7,3 +7,4 @@ backend/media/
 db.sqlite3
 .DS_Store
 firebase-service-account.json
+*.hprof

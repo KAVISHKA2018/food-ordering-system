@@ -8,6 +8,7 @@ import '../restaurant/restaurant_detail_screen.dart';
 import '../activity/activity_hub_screen.dart';
 import '../profile/profile_screen.dart';
 import '../scan/qr_scanner_screen.dart';
+import '../search/search_screen.dart';
 
 import '../../models/promotion_model.dart';
 import '../../services/promotion_service.dart';
@@ -20,6 +21,8 @@ import '../../providers/cart_provider.dart';
 import '../restaurant/food_detail_sheet.dart';
 import '../../widgets/floating_cart_button.dart';
 import '../activity/cart_tab.dart';
+
+import '../../services/location_service.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -34,12 +37,16 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<List<PromotionModel>> _promotionsFuture;
   late Future<List<MenuItemModel>> _recommendationsFuture;
 
+  String _locationLabel = 'Set your location';
+  bool _loadingLocation = false;
+
   @override
   void initState() {
     super.initState();
     _restaurantsFuture = RestaurantService.getRestaurants();
     _promotionsFuture = PromotionService.getActivePromotions();
     _recommendationsFuture = RecommendationService.getForMe();
+    _loadSavedLocation();
   }
 
   Future<void> _refresh() async {
@@ -48,6 +55,46 @@ class _HomeScreenState extends State<HomeScreen> {
       _promotionsFuture = PromotionService.getActivePromotions();
       _recommendationsFuture = RecommendationService.getForMe();
     });
+  }
+
+  Future<void> _loadSavedLocation() async {
+    final saved = await LocationService.getSavedLocationLabel();
+    if (saved != null && mounted) {
+      setState(() => _locationLabel = saved);
+    }
+    // Show the last-known location instantly, then quietly refresh it
+    // with a fresh GPS fix in the background — no error shown if this
+    // fails (e.g. permission not yet granted); the user can still tap
+    // to retry manually.
+    _autoUpdateLocationSilently();
+  }
+
+  Future<void> _autoUpdateLocationSilently() async {
+    final result = await LocationService.getCurrentLocation();
+    if (!mounted) return;
+    if (result['success']) {
+      final location = result['result'] as LocationResult;
+      setState(() => _locationLabel = location.label);
+    }
+    // Silently ignore failures here — this is a background refresh, not
+    // a user-initiated action, so we don't want to show an error SnackBar
+    // every time the app opens without location permission granted yet.
+  }
+
+  Future<void> _useCurrentLocation() async {
+    setState(() => _loadingLocation = true);
+    final result = await LocationService.getCurrentLocation();
+    if (!mounted) return;
+    setState(() => _loadingLocation = false);
+
+    if (result['success']) {
+      final location = result['result'] as LocationResult;
+      setState(() => _locationLabel = location.label);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['error'].toString())),
+      );
+    }
   }
 
   Future<void> _openRecommendedItem(MenuItemModel item) async {
@@ -140,17 +187,36 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
       child: Row(
         children: [
-          const Icon(Icons.location_on, color: AppColors.primary),
-          const SizedBox(width: 6),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Deliver to',
-                    style: TextStyle(fontSize: 12, color: AppColors.textGrey)),
-                Text('Set your location',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-              ],
+          Expanded(
+            child: GestureDetector(
+              onTap: _loadingLocation ? null : _useCurrentLocation,
+              child: Row(
+                children: [
+                  _loadingLocation
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.location_on, color: AppColors.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Deliver to',
+                            style: TextStyle(fontSize: 12, color: AppColors.textGrey)),
+                        Text(
+                          _locationLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           IconButton(
@@ -181,17 +247,25 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: const TextField(
-          decoration: InputDecoration(
-            border: InputBorder.none,
-            hintText: 'Search restaurants or food',
-            prefixIcon: Icon(Icons.search, color: AppColors.textGrey),
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SearchScreen()),
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: AppColors.cardBackground,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: const [
+              Icon(Icons.search, color: AppColors.textGrey),
+              SizedBox(width: 10),
+              Text('Search restaurants or food', style: TextStyle(color: AppColors.textGrey)),
+            ],
           ),
         ),
       ),
@@ -558,124 +632,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Thin wrapper so home_screen.dart doesn't need to import the activity
-/// tab's CartTab file directly — keeps this file's imports self-contained.
-class _CartSheetContent extends StatelessWidget {
-  const _CartSheetContent();
-
-  @override
-  Widget build(BuildContext context) {
-    return const _InlineCartTab();
-  }
-}
-
-class _InlineCartTab extends StatefulWidget {
-  const _InlineCartTab();
-
-  @override
-  State<_InlineCartTab> createState() => _InlineCartTabState();
-}
-
-class _InlineCartTabState extends State<_InlineCartTab> {
-  @override
-  Widget build(BuildContext context) {
-    final cart = Provider.of<CartProvider>(context);
-    final carts = cart.restaurantCarts;
-
-    if (carts.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.shopping_cart_outlined, size: 60, color: AppColors.textGrey),
-              SizedBox(height: 12),
-              Text('Your cart is empty', style: TextStyle(color: AppColors.textGrey, fontSize: 16)),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: carts.length,
-      itemBuilder: (context, index) {
-        final myCart = carts[index];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(myCart.restaurantName,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                const Divider(height: 20),
-                ...myCart.items.entries.map((entry) {
-                  final key = entry.key;
-                  final item = entry.value;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(item.displayName, style: const TextStyle(fontSize: 14)),
-                              Text('Rs. ${item.unitPrice.toStringAsFixed(0)} each',
-                                  style: const TextStyle(color: AppColors.textGrey, fontSize: 12)),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          icon: const Icon(Icons.remove_circle_outline, size: 20),
-                          onPressed: () => cart.decrementByKey(myCart.restaurantId, key),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Text('${item.quantity}'),
-                        ),
-                        IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          icon: const Icon(Icons.add_circle_outline, size: 20, color: AppColors.primary),
-                          onPressed: () => cart.incrementByKey(myCart.restaurantId, key),
-                        ),
-                        SizedBox(
-                          width: 70,
-                          child: Text(
-                            'Rs. ${item.subtotal.toStringAsFixed(0)}',
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-                const Divider(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Subtotal', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                    Text('Rs. ${myCart.totalAmount.toStringAsFixed(0)}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }

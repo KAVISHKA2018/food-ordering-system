@@ -8,6 +8,10 @@ import '../../services/promotion_service.dart';
 import '../../utils/table_number_utils.dart';
 import '../../widgets/payment_confirm_dialog.dart';
 import '../checkout/card_payment_webview_screen.dart';
+import '../../services/location_service.dart';
+
+import '../../providers/auth_provider.dart';
+import '../../models/user_model.dart';
 
 class CartScreen extends StatefulWidget {
   final RestaurantModel restaurant;
@@ -30,6 +34,7 @@ class _CartScreenState extends State<CartScreen> {
   bool _initializedFromCart = false;
   bool _isTableFlow = false;
   bool _resolvingAwaitingOrder = false;
+  bool _checkingAwaitingOrder = true;
 
   String? _appliedPromoCode;
   double _discountAmount = 0;
@@ -38,11 +43,27 @@ class _CartScreenState extends State<CartScreen> {
 
   int get _restaurantId => widget.restaurant.id;
 
+  double? _deliveryLatitude;
+  double? _deliveryLongitude;
+
+  final _alternativePhoneController = TextEditingController();
+  bool _deliveryFieldsPrefilled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final cart = Provider.of<CartProvider>(context, listen: false);
+      _verifyAwaitingOrder(cart);
+    });
+  }
+
   @override
   void dispose() {
     _tableNumberController.dispose();
     _deliveryAddressController.dispose();
     _contactPhoneController.dispose();
+    _alternativePhoneController.dispose();
     _notesController.dispose();
     _promoCodeController.dispose();
     super.dispose();
@@ -71,6 +92,40 @@ class _CartScreenState extends State<CartScreen> {
       default:
         return type;
     }
+  }
+
+  /// Confirms an "awaiting payment" order tracked locally for this
+  /// restaurant is actually still real, still unpaid, AND actually
+  /// belongs to THIS restaurant before showing the blocker screen.
+  /// Prevents stale/mismatched local tracking (e.g. from earlier testing)
+  /// from permanently blocking a genuinely fresh checkout.
+  Future<void> _verifyAwaitingOrder(CartProvider cart) async {
+    final awaitingId = cart.awaitingOrderIdFor(_restaurantId);
+    if (awaitingId == null) {
+      setState(() => _checkingAwaitingOrder = false);
+      return;
+    }
+
+    try {
+      final orders = await OrderService.getMyOrders();
+      final order = orders.where((o) => o.id == awaitingId).firstOrNull;
+
+      if (order == null ||
+          order.status != 'AWAITING_PAYMENT' ||
+          order.restaurantId != _restaurantId) {
+        // Stale tracking — the order doesn't exist anymore, was already
+        // resolved some other way, or (most likely bug) belongs to a
+        // DIFFERENT restaurant than this one. Clear it silently instead
+        // of showing a confusing/incorrect blocker.
+        cart.clearAwaitingOrder(_restaurantId);
+      }
+    } catch (_) {
+      // If we can't verify right now, don't block checkout on a network
+      // hiccup — fail open and let the customer proceed normally.
+      cart.clearAwaitingOrder(_restaurantId);
+    }
+
+    if (mounted) setState(() => _checkingAwaitingOrder = false);
   }
 
   Future<void> _applyPromoCode(RestaurantCartData myCart) async {
@@ -143,7 +198,9 @@ class _CartScreenState extends State<CartScreen> {
       restaurantName: widget.restaurant.name,
       orderTypeLabel: _orderTypeLabel(_orderType),
       totalAmount: _totalDue(myCart),
-      paymentMethodLabel: _orderType == 'DINE_IN' ? 'Added to table bill' : (_paymentMethod == 'CASH' ? 'Cash' : 'Card'),
+      paymentMethodLabel: _orderType == 'DINE_IN'
+          ? 'Added to table bill'
+          : (_paymentMethod == 'CASH' ? 'Cash' : 'Card'),
     );
     if (!confirmed) return;
 
@@ -153,6 +210,19 @@ class _CartScreenState extends State<CartScreen> {
 
   Future<void> _placeOrder(CartProvider cart, RestaurantCartData myCart) async {
     setState(() => _placing = true);
+
+    // For Delivery orders, silently capture the customer's current GPS
+    // location right before placing the order — no button, no visible
+    // step. If it fails (permission denied, GPS off, etc.) we simply
+    // proceed without it; the typed address is still required and used.
+    if (_orderType == 'DELIVERY' && _deliveryLatitude == null) {
+      final locationResult = await LocationService.getCurrentLocation();
+      if (locationResult['success']) {
+        final location = locationResult['result'] as LocationResult;
+        _deliveryLatitude = location.latitude;
+        _deliveryLongitude = location.longitude;
+      }
+    }
 
     final items = myCart.items.values
         .map((cartItem) => {
@@ -169,7 +239,10 @@ class _CartScreenState extends State<CartScreen> {
       orderType: _orderType,
       items: items,
       deliveryAddress: _deliveryAddressController.text.trim(),
+      deliveryLatitude: _deliveryLatitude,
+      deliveryLongitude: _deliveryLongitude,
       contactPhone: _contactPhoneController.text.trim(),
+      alternativePhone: _alternativePhoneController.text.trim(),
       tableNumber: normalizedTable,
       notes: [_notesController.text.trim(), myCart.buildItemNotesSummary()]
           .where((s) => s.isNotEmpty)
@@ -196,11 +269,7 @@ class _CartScreenState extends State<CartScreen> {
     final order = result['order'];
 
     if (_orderType != 'DINE_IN' && _paymentMethod == 'CARD') {
-      // Track this order as "awaiting payment" for this restaurant BEFORE
-      // opening the gateway — if the customer abandons the payment and
-      // comes back, we'll find it here and block a duplicate order.
-      cart.setAwaitingOrder(_restaurantId, order.id);
-      await _openCardPayment(cart, order.latestPaymentId, order);
+      await _openCardPayment(cart, order.id, order.latestPaymentId, order);
       return;
     }
 
@@ -209,7 +278,7 @@ class _CartScreenState extends State<CartScreen> {
     _showSuccessDialog(order);
   }
 
-  Future<void> _openCardPayment(CartProvider cart, int? paymentId, dynamic order) async {
+  Future<void> _openCardPayment(CartProvider cart, int orderId, int? paymentId, dynamic order) async {
     if (paymentId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not start payment. Please try again.')),
@@ -226,7 +295,6 @@ class _CartScreenState extends State<CartScreen> {
       );
       return;
     }
-
     final paid = await Navigator.push<bool?>(
       context,
       MaterialPageRoute(
@@ -244,11 +312,17 @@ class _CartScreenState extends State<CartScreen> {
       cart.clearRestaurant(_restaurantId);
       _showSuccessDialog(order);
     } else {
-      // Payment not completed — the order stays as-is (AWAITING_PAYMENT),
-      // and remains tracked so re-opening this screen blocks a duplicate.
-      setState(() {}); // rebuild to show the "awaiting payment" blocker
+      // Payment was NOT completed — only NOW do we mark this order as
+      // awaiting payment. This is what keeps a fresh, successful checkout
+      // flow completely free of any intermediate screen, while still
+      // correctly protecting against duplicate orders on retry.
+      cart.setAwaitingOrder(_restaurantId, orderId);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Payment was not completed. Use "Pay Now" below to try again, or cancel this order.')),
+        const SnackBar(
+          content: Text(
+            'Payment was not completed. Use "Pay Now" below to try again, or cancel this order.',
+          ),
+        ),
       );
     }
   }
@@ -315,7 +389,9 @@ class _CartScreenState extends State<CartScreen> {
         cart.clearAwaitingOrder(_restaurantId);
         cart.clearRestaurant(_restaurantId);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please pay at the counter. Your order is now pending confirmation.')),
+          const SnackBar(
+            content: Text('Please pay at the counter. Your order is now pending confirmation.'),
+          ),
         );
         Navigator.of(context).popUntil((route) => route.isFirst);
       } else {
@@ -326,7 +402,7 @@ class _CartScreenState extends State<CartScreen> {
       return;
     }
 
-    await _openCardPayment(cart, order.latestPaymentId, order);
+    await _openCardPayment(cart, order.id, order.latestPaymentId, order);
   }
 
   Future<void> _cancelAwaitingOrder(CartProvider cart, int orderId) async {
@@ -438,6 +514,252 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
+  Widget _buildCartForm(CartProvider cart, RestaurantCartData myCart) {
+    final orderTypes = _availableOrderTypes;
+    if (orderTypes.isNotEmpty && !orderTypes.containsKey(_orderType)) {
+      _orderType = orderTypes.keys.first;
+    }
+
+    if (orderTypes.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'This restaurant is not currently accepting orders.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        ...myCart.items.entries.map((entry) {
+          final key = entry.key;
+          final cartItem = entry.value;
+          return Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            child: ListTile(
+              title: Text(cartItem.displayName),
+              subtitle: Text('Rs. ${cartItem.unitPrice.toStringAsFixed(0)} x ${cartItem.quantity}'),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.remove_circle_outline),
+                    onPressed: () => cart.decrementByKey(_restaurantId, key),
+                  ),
+                  Text('${cartItem.quantity}'),
+                  IconButton(
+                    icon: const Icon(Icons.add_circle_outline),
+                    onPressed: () => cart.incrementByKey(_restaurantId, key),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }),
+        const Divider(height: 32),
+        const Text('Order Type', style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: orderTypes.entries.map((e) {
+            return ChoiceChip(
+              label: Text(e.value),
+              selected: _orderType == e.key,
+              selectedColor: AppColors.primary,
+              labelStyle: TextStyle(
+                color: _orderType == e.key ? Colors.white : AppColors.textDark,
+              ),
+              onSelected: (_) => setState(() {
+                _orderType = e.key;
+                if (e.key == 'DELIVERY' && !_deliveryFieldsPrefilled) {
+                  final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                  if (authProvider.user != null) {
+                    final currentUser = UserModel.fromJson(authProvider.user!);
+                    if (_deliveryAddressController.text.isEmpty && currentUser.address.isNotEmpty) {
+                      _deliveryAddressController.text = currentUser.address;
+                    }
+                    if (_contactPhoneController.text.isEmpty && currentUser.phoneNumber.isNotEmpty) {
+                      _contactPhoneController.text = currentUser.phoneNumber;
+                    }
+                    _deliveryFieldsPrefilled = true;
+                  }
+                }
+              }),
+            );
+          }).toList(),
+        ),
+        if (_orderType == 'DINE_IN') ...[
+          const SizedBox(height: 16),
+          TextField(
+            controller: _tableNumberController,
+            keyboardType: TextInputType.text,
+            decoration: const InputDecoration(
+              labelText: 'Table Number',
+              hintText: 'e.g. 3 or 05',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.table_bar),
+            ),
+            onEditingComplete: () {
+              _tableNumberController.text = normalizeTableNumber(_tableNumberController.text);
+            },
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'This order will be added to your table\'s bill. You can pay anytime from "My Activity".',
+            style: TextStyle(color: AppColors.textGrey, fontSize: 12),
+          ),
+        ],
+        if (_orderType == 'DELIVERY') ...[
+          const SizedBox(height: 16),
+          TextField(
+            controller: _deliveryAddressController,
+            maxLines: 2,
+            decoration: const InputDecoration(
+              labelText: 'Delivery Address',
+              hintText: 'House number, street, city',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.location_on_outlined),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _contactPhoneController,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: 'Contact Phone Number',
+              hintText: 'e.g. 0771234567',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.phone_outlined),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _alternativePhoneController,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: 'Alternative Phone Number (optional)',
+              hintText: 'Backup number, in case we can\'t reach you',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.phone_forwarded_outlined),
+            ),
+          ),
+        ],
+        if (_orderType != 'DINE_IN') ...[
+          const SizedBox(height: 20),
+          const Text('Payment Method', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          PaymentMethodSelector(
+            selected: _paymentMethod,
+            onChanged: (value) => setState(() => _paymentMethod = value),
+          ),
+        ],
+        const SizedBox(height: 16),
+        TextField(
+          controller: _notesController,
+          decoration: const InputDecoration(
+            labelText: 'Notes (optional)',
+            border: OutlineInputBorder(),
+          ),
+          maxLines: 2,
+        ),
+        const SizedBox(height: 16),
+        const Text('Promo Code', style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        if (_appliedPromoCode != null)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEEF7ED),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.local_offer, color: Colors.green, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${_promoTitle ?? _appliedPromoCode} applied (-Rs. ${_discountAmount.toStringAsFixed(0)})',
+                    style: const TextStyle(fontSize: 13, color: Colors.green, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: _removePromoCode,
+                ),
+              ],
+            ),
+          )
+        else
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _promoCodeController,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: const InputDecoration(
+                    hintText: 'Enter promo code',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              _validatingPromo
+                  ? const SizedBox(
+                      width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  : TextButton(
+                      onPressed: () => _applyPromoCode(myCart),
+                      child: const Text('Apply'),
+                    ),
+            ],
+          ),
+        const SizedBox(height: 24),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Subtotal', style: TextStyle(fontSize: 14)),
+            Text('Rs. ${myCart.totalAmount.toStringAsFixed(0)}', style: const TextStyle(fontSize: 14)),
+          ],
+        ),
+        if (_discountAmount > 0) ...[
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Discount', style: TextStyle(fontSize: 14, color: Colors.green)),
+              Text('-Rs. ${_discountAmount.toStringAsFixed(0)}',
+                  style: const TextStyle(fontSize: 14, color: Colors.green)),
+            ],
+          ),
+        ],
+        const Divider(height: 20),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Total', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text('Rs. ${_totalDue(myCart).toStringAsFixed(0)}',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _placing
+            ? const Center(child: CircularProgressIndicator())
+            : ElevatedButton(
+                onPressed: () => _onContinue(cart, myCart),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  minimumSize: const Size(double.infinity, 0),
+                ),
+                child: const Text('Continue', style: TextStyle(fontSize: 16)),
+              ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cart = Provider.of<CartProvider>(context);
@@ -456,229 +778,20 @@ class _CartScreenState extends State<CartScreen> {
       _initializedFromCart = true;
     }
 
-    final orderTypes = _availableOrderTypes;
-    if (orderTypes.isNotEmpty && !orderTypes.containsKey(_orderType)) {
-      _orderType = orderTypes.keys.first;
+    Widget body;
+    if (_checkingAwaitingOrder) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (awaitingOrderId != null) {
+      body = _buildAwaitingOrderBlocker(cart, awaitingOrderId);
+    } else if (myCart == null || myCart.isEmpty) {
+      body = const Center(child: Text('Your cart is empty'));
+    } else {
+      body = _buildCartForm(cart, myCart);
     }
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.restaurant.name)),
-      body: awaitingOrderId != null
-          ? _buildAwaitingOrderBlocker(cart, awaitingOrderId)
-          : (myCart == null || myCart.isEmpty)
-              ? const Center(child: Text('Your cart is empty'))
-              : orderTypes.isEmpty
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text(
-                          'This restaurant is not currently accepting orders.',
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    )
-                  : ListView(
-                      padding: const EdgeInsets.all(16),
-                      children: [
-                        ...myCart.items.entries.map((entry) {
-                          final key = entry.key;
-                          final cartItem = entry.value;
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              title: Text(cartItem.displayName),
-                              subtitle: Text(
-                                  'Rs. ${cartItem.unitPrice.toStringAsFixed(0)} x ${cartItem.quantity}'),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.remove_circle_outline),
-                                    onPressed: () => cart.decrementByKey(_restaurantId, key),
-                                  ),
-                                  Text('${cartItem.quantity}'),
-                                  IconButton(
-                                    icon: const Icon(Icons.add_circle_outline),
-                                    onPressed: () => cart.incrementByKey(_restaurantId, key),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }),
-                        const Divider(height: 32),
-                        const Text('Order Type', style: TextStyle(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          children: orderTypes.entries.map((e) {
-                            return ChoiceChip(
-                              label: Text(e.value),
-                              selected: _orderType == e.key,
-                              selectedColor: AppColors.primary,
-                              labelStyle: TextStyle(
-                                color: _orderType == e.key ? Colors.white : AppColors.textDark,
-                              ),
-                              onSelected: (_) => setState(() => _orderType = e.key),
-                            );
-                          }).toList(),
-                        ),
-                        if (_orderType == 'DINE_IN') ...[
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _tableNumberController,
-                            keyboardType: TextInputType.text,
-                            decoration: const InputDecoration(
-                              labelText: 'Table Number',
-                              hintText: 'e.g. 3 or 05',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.table_bar),
-                            ),
-                            onEditingComplete: () {
-                              _tableNumberController.text =
-                                  normalizeTableNumber(_tableNumberController.text);
-                            },
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'This order will be added to your table\'s bill. You can pay anytime from "My Activity".',
-                            style: TextStyle(color: AppColors.textGrey, fontSize: 12),
-                          ),
-                        ],
-                        if (_orderType == 'DELIVERY') ...[
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _deliveryAddressController,
-                            maxLines: 2,
-                            decoration: const InputDecoration(
-                              labelText: 'Delivery Address',
-                              hintText: 'House number, street, city',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.location_on_outlined),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: _contactPhoneController,
-                            keyboardType: TextInputType.phone,
-                            decoration: const InputDecoration(
-                              labelText: 'Contact Phone Number',
-                              hintText: 'e.g. 0771234567',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.phone_outlined),
-                            ),
-                          ),
-                        ],
-                        if (_orderType != 'DINE_IN') ...[
-                          const SizedBox(height: 20),
-                          const Text('Payment Method', style: TextStyle(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 10),
-                          PaymentMethodSelector(
-                            selected: _paymentMethod,
-                            onChanged: (value) => setState(() => _paymentMethod = value),
-                          ),
-                        ],
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: _notesController,
-                          decoration: const InputDecoration(
-                            labelText: 'Notes (optional)',
-                            border: OutlineInputBorder(),
-                          ),
-                          maxLines: 2,
-                        ),
-                        const SizedBox(height: 16),
-                        const Text('Promo Code', style: TextStyle(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 8),
-                        if (_appliedPromoCode != null)
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFEEF7ED),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.local_offer, color: Colors.green, size: 18),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    '${_promoTitle ?? _appliedPromoCode} applied (-Rs. ${_discountAmount.toStringAsFixed(0)})',
-                                    style: const TextStyle(fontSize: 13, color: Colors.green, fontWeight: FontWeight.w600),
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.close, size: 18),
-                                  onPressed: _removePromoCode,
-                                ),
-                              ],
-                            ),
-                          )
-                        else
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _promoCodeController,
-                                  textCapitalization: TextCapitalization.characters,
-                                  decoration: const InputDecoration(
-                                    hintText: 'Enter promo code',
-                                    border: OutlineInputBorder(),
-                                    isDense: true,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              _validatingPromo
-                                  ? const SizedBox(
-                                      width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                                  : TextButton(
-                                      onPressed: () => _applyPromoCode(myCart),
-                                      child: const Text('Apply'),
-                                    ),
-                            ],
-                          ),
-                        const SizedBox(height: 24),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('Subtotal', style: TextStyle(fontSize: 14)),
-                            Text('Rs. ${myCart.totalAmount.toStringAsFixed(0)}', style: const TextStyle(fontSize: 14)),
-                          ],
-                        ),
-                        if (_discountAmount > 0) ...[
-                          const SizedBox(height: 4),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('Discount', style: TextStyle(fontSize: 14, color: Colors.green)),
-                              Text('-Rs. ${_discountAmount.toStringAsFixed(0)}',
-                                  style: const TextStyle(fontSize: 14, color: Colors.green)),
-                            ],
-                          ),
-                        ],
-                        const Divider(height: 20),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('Total', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                            Text('Rs. ${_totalDue(myCart).toStringAsFixed(0)}',
-                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        _placing
-                            ? const Center(child: CircularProgressIndicator())
-                            : ElevatedButton(
-                                onPressed: () => _onContinue(cart, myCart),
-                                style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                  minimumSize: const Size(double.infinity, 0),
-                                ),
-                                child: const Text('Continue', style: TextStyle(fontSize: 16)),
-                              ),
-                      ],
-                    ),
+      body: body,
     );
   }
 }

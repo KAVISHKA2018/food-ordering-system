@@ -12,6 +12,8 @@ import random
 from .serializers import RegisterSerializer, UserSerializer
 from .models import PhoneOTP
 
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+
 User = get_user_model()
 
 
@@ -37,6 +39,7 @@ class RegisterView(generics.CreateAPIView):
 
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]  # supports profile picture uploads
 
     def get(self, request):
         return Response(UserSerializer(request.user).data)
@@ -256,3 +259,36 @@ class LoginWithPINView(APIView):
             "access": str(refresh.access_token),
             "refresh": str(refresh),
         })
+
+# --- Change phone number: requires a recently-verified OTP for the NEW
+# number (via the same RequestOTPView/VerifyOTPView used at registration) ---
+
+class ChangePhoneNumberView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        new_phone = (request.data.get('phone_number') or '').strip()
+        if not new_phone:
+            return Response({"detail": "Phone number is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if User.objects.filter(phone_number=new_phone).exclude(id=request.user.id).exists():
+            return Response(
+                {"detail": "This phone number is already registered to another account."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        recent_cutoff = timezone.now() - timedelta(minutes=15)
+        verified_otp = PhoneOTP.objects.filter(
+            phone_number=new_phone, is_verified=True, verified_at__gte=recent_cutoff
+        ).order_by('-verified_at').first()
+
+        if not verified_otp:
+            return Response(
+                {"detail": "Please verify this phone number with the OTP code first."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = request.user
+        user.phone_number = new_phone
+        user.save()
+        return Response(UserSerializer(user).data)
