@@ -114,6 +114,7 @@ export default function Sidebar() {
           <NavLink to="/promotions" style={linkStyle}>Promotions</NavLink>
           <NavLink to="/reviews" style={linkStyle}>Reviews</NavLink>
           <NavLink to="/reports" style={linkStyle}>Reports</NavLink>
+          <NavLink to="/delivery-staff" style={linkStyle}>Delivery Staff</NavLink>
         </nav>
       </div>
 

@@ -129,4 +129,12 @@ class OrderService {
     final data = jsonDecode(response.body);
     return {'success': false, 'error': data['detail'] ?? 'Could not switch to cash.'};
   }
+
+  static Future<OrderModel?> getOrderDetail(int orderId) async {
+    final response = await ApiService.get('${ApiConfig.orders}$orderId/', auth: true);
+    if (response.statusCode == 200) {
+      return OrderModel.fromJson(jsonDecode(response.body));
+    }
+    return null;
+  }
 }

@@ -8,3 +8,5 @@ db.sqlite3
 .DS_Store
 firebase-service-account.json
 *.hprof
+mobile_app/lib/config/secrets.dart
+delivery_app/lib/config/secrets.dart

@@ -10,10 +10,11 @@ from orders.models import OrderItem, Order
 from reviews.models import FoodReview
 
 # Hybrid score weights — must sum to 1.0
-W_CONTENT = 0.45
-W_RATING = 0.20
+W_CONTENT = 0.35
+W_RATING = 0.15
 W_COPURCHASE = 0.20
-W_RESTAURANT = 0.15
+W_RESTAURANT = 0.10
+W_POPULARITY = 0.20
 
 RECENCY_HALF_LIFE_DAYS = 30  # an order from 30 days ago counts half as much as one from today
 MMR_LAMBDA = 0.75  # 1.0 = pure relevance, 0.0 = pure diversity
@@ -110,6 +111,26 @@ def _copurchase_scores(seed_item_ids, candidate_item_ids):
     return {item_id: raw.get(item_id, 0) / max_count for item_id in candidate_item_ids}
 
 
+def _popularity_scores(candidate_ids):
+    """How often each candidate has been ordered, across ALL customers —
+    normalized 0-1 against the most popular candidate. This is what lets
+    a genuinely best-selling dish get a boost even in a personalized list,
+    not just as the cold-start fallback."""
+    counts = (
+        OrderItem.objects.filter(
+            menu_item_id__in=candidate_ids, order__status=Order.Status.COMPLETED
+        )
+        .values('menu_item_id')
+        .annotate(order_count=Count('id'))
+    )
+    raw = {row['menu_item_id']: row['order_count'] for row in counts}
+    if not raw:
+        return {item_id: 0.0 for item_id in candidate_ids}
+
+    max_count = max(raw.values())
+    return {item_id: raw.get(item_id, 0) / max_count for item_id in candidate_ids}
+
+
 def _customer_known_restaurants(user):
     """Restaurant IDs this customer has completed at least one order from —
     used for the 'familiarity' boost."""
@@ -176,6 +197,7 @@ def recommend_for_user(user, restaurant_id=None, limit=10):
 
     rating_scores = _item_rating_scores(candidate_ids)
     copurchase_scores = _copurchase_scores(list(already_ordered), candidate_ids)
+    popularity_scores = _popularity_scores(candidate_ids)
     known_restaurants = _customer_known_restaurants(user)
 
     relevance = {}
@@ -186,6 +208,7 @@ def recommend_for_user(user, restaurant_id=None, limit=10):
         content = content_scores[idx]
         rating = rating_scores.get(item_id, 0.5)
         copurchase = copurchase_scores.get(item_id, 0.0)
+        popularity = popularity_scores.get(item_id, 0.0)
         restaurant_bonus = 1.0 if id_to_restaurant.get(item_id) in known_restaurants else 0.0
 
         score = (
@@ -193,6 +216,7 @@ def recommend_for_user(user, restaurant_id=None, limit=10):
             + W_RATING * rating
             + W_COPURCHASE * copurchase
             + W_RESTAURANT * restaurant_bonus
+            + W_POPULARITY * popularity
         )
         relevance[item_id] = score
 
@@ -208,11 +232,14 @@ def recommend_for_user(user, restaurant_id=None, limit=10):
         content_contribution = W_CONTENT * content
         copurchase_contribution = W_COPURCHASE * copurchase
         restaurant_contribution = W_RESTAURANT * restaurant_bonus
+        popularity_contribution = W_POPULARITY * popularity
 
         if copurchase_contribution > content_contribution and copurchase > 0.3:
             reasons[item_id] = "Frequently ordered alongside your favorites"
-        elif content_contribution >= max(copurchase_contribution, restaurant_contribution) and best_seed_id:
+        elif content_contribution >= max(copurchase_contribution, restaurant_contribution, popularity_contribution) and best_seed_id:
             reasons[item_id] = f"Because you liked {id_to_name.get(best_seed_id, 'a similar dish')}"
+        elif popularity_contribution >= restaurant_contribution and popularity > 0.5:
+            reasons[item_id] = "Best-selling item"
         elif restaurant_contribution > 0:
             reasons[item_id] = "From a restaurant you've ordered from before"
         else:

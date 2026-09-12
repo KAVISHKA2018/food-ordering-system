@@ -117,11 +117,7 @@ export default function ReservationsPage() {
       }
       return r.status === filter;
     })
-    .sort((a, b) => {
-      const dateCompare = new Date(a.reservation_date) - new Date(b.reservation_date);
-      if (dateCompare !== 0) return dateCompare;
-      return a.reservation_time.localeCompare(b.reservation_time);
-    });
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   if (loading) return <Layout><div style={styles.page}>Loading...</div></Layout>;
 
@@ -279,6 +275,11 @@ export default function ReservationsPage() {
                       >
                         {paymentInfo.label}
                       </span>
+                      {res.payment_method && (
+                        <p style={styles.paymentNote}>
+                          {res.payment_method === 'CARD' ? '💳 Card Payment' : '💵 Cash Payment'}
+                        </p>
+                      )}
                       {res.payment_status === 'PENDING_CONFIRMATION' && (
                         <button
                           style={styles.confirmPaymentBtn}
@@ -374,6 +375,9 @@ const styles = {
     padding: '8px 12px', backgroundColor: '#2B2B2B', color: '#fff', border: 'none',
     borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
   },
+  paymentNote: {
+    fontSize: '12px', color: '#8E8E8E', margin: '6px 0 0',
+  },
   confirmPaymentBtn: {
     display: 'block', width: '100%', padding: '9px', backgroundColor: '#FB8C00', color: '#fff',
     border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, marginTop: '8px',
@@ -397,4 +401,5 @@ const styles = {
     billBox: {
     backgroundColor: '#EEF7ED', borderRadius: '8px', padding: '10px', marginTop: '10px',
   },
+
 };

@@ -46,6 +46,8 @@ class OrderModel {
   final String orderType;
   final String status;
   final String deliveryAddress;
+  final double? deliveryLatitude;
+  final double? deliveryLongitude;
   final String contactPhone;
   final String? tableNumber;
   final String paymentStatus;
@@ -58,6 +60,9 @@ class OrderModel {
   final bool hasReview;
   final int? latestPaymentId;
   final String createdAt;
+  final bool tripStarted;
+  final double? riderCurrentLatitude;
+  final double? riderCurrentLongitude;
 
   OrderModel({
     this.latestPaymentId,
@@ -67,6 +72,8 @@ class OrderModel {
     required this.orderType,
     required this.status,
     required this.deliveryAddress,
+    this.deliveryLatitude,
+    this.deliveryLongitude,
     this.contactPhone = '',
     this.tableNumber,
     this.paymentStatus = 'N/A',
@@ -78,6 +85,9 @@ class OrderModel {
     required this.items,
     required this.hasReview,
     required this.createdAt,
+    this.tripStarted = false,
+    this.riderCurrentLatitude,
+    this.riderCurrentLongitude,
   });
 
   factory OrderModel.fromJson(Map<String, dynamic> json) {
@@ -88,6 +98,8 @@ class OrderModel {
       orderType: json['order_type'],
       status: json['status'],
       deliveryAddress: json['delivery_address'] ?? '',
+      deliveryLatitude: json['delivery_latitude']?.toDouble(),
+      deliveryLongitude: json['delivery_longitude']?.toDouble(),
       contactPhone: json['contact_phone'] ?? '',
       tableNumber: json['table_number'],
       paymentStatus: json['payment_status'] ?? 'N/A',
@@ -106,6 +118,9 @@ class OrderModel {
       hasReview: json['has_review'] ?? false,
       latestPaymentId: json['latest_payment_id'],
       createdAt: json['created_at'] ?? '',
+      tripStarted: json['delivery_started_at'] != null,
+      riderCurrentLatitude: json['rider_current_latitude']?.toDouble(),
+      riderCurrentLongitude: json['rider_current_longitude']?.toDouble(),
     );
   }
 }

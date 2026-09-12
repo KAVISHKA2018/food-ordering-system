@@ -9,9 +9,10 @@ import '../../utils/table_number_utils.dart';
 import '../../widgets/payment_confirm_dialog.dart';
 import '../checkout/card_payment_webview_screen.dart';
 import '../../services/location_service.dart';
-
+import '../checkout/location_picker_screen.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/user_model.dart';
+import 'dart:ui';
 
 class CartScreen extends StatefulWidget {
   final RestaurantModel restaurant;
@@ -75,9 +76,7 @@ class _CartScreenState extends State<CartScreen> {
 
     if (r.supportsDineIn) types['DINE_IN'] = 'Dine In';
     if (r.supportsTakeaway) types['TAKEAWAY'] = 'Takeaway';
-    if (!_isTableFlow && r.supportsDelivery) {
-      types['DELIVERY'] = 'Delivery';
-    }
+    if (r.supportsDelivery) types['DELIVERY'] = 'Delivery';
     return types;
   }
 
@@ -193,14 +192,29 @@ class _CartScreenState extends State<CartScreen> {
       return;
     }
 
+    String paymentMethodLabel;
+    String? confirmNote;
+
+    if (_orderType == 'DINE_IN') {
+      paymentMethodLabel = 'Added to table bill';
+    } else if (_paymentMethod == 'CARD') {
+      paymentMethodLabel = 'Card';
+      confirmNote = 'You will be redirected to a secure payment page to pay online now.';
+    } else if (_orderType == 'DELIVERY') {
+      paymentMethodLabel = 'Cash on Delivery';
+      confirmNote = 'Please have Rs. ${_totalDue(myCart).toStringAsFixed(0)} ready to pay the rider in cash when your order arrives.';
+    } else {
+      paymentMethodLabel = 'Cash';
+      confirmNote = 'Please pay in cash when you collect your order at the restaurant.';
+    }
+
     final confirmed = await showPaymentConfirmDialog(
       context: context,
       restaurantName: widget.restaurant.name,
       orderTypeLabel: _orderTypeLabel(_orderType),
       totalAmount: _totalDue(myCart),
-      paymentMethodLabel: _orderType == 'DINE_IN'
-          ? 'Added to table bill'
-          : (_paymentMethod == 'CASH' ? 'Cash' : 'Card'),
+      paymentMethodLabel: paymentMethodLabel,
+      note: confirmNote,
     );
     if (!confirmed) return;
 
@@ -251,9 +265,8 @@ class _CartScreenState extends State<CartScreen> {
       paymentMethod: _orderType == 'DINE_IN' ? 'CASH' : _paymentMethod,
     );
 
-    setState(() => _placing = false);
-
     if (!result['success']) {
+      setState(() => _placing = false);
       if (!mounted) return;
       final error = result['error'];
       String message = 'Failed to place order';
@@ -269,11 +282,18 @@ class _CartScreenState extends State<CartScreen> {
     final order = result['order'];
 
     if (_orderType != 'DINE_IN' && _paymentMethod == 'CARD') {
+      // Deliberately keep _placing = true (screen stays locked/blurred)
+      // through the ENTIRE card flow — creating the checkout session AND
+      // opening the gateway — not just order creation. This closes the
+      // window where a second tap on Continue could slip through and
+      // create a duplicate order before the gateway even appears.
       await _openCardPayment(cart, order.id, order.latestPaymentId, order);
+      if (mounted) setState(() => _placing = false);
       return;
     }
 
     cart.clearRestaurant(_restaurantId);
+    setState(() => _placing = false);
     if (!mounted) return;
     _showSuccessDialog(order);
   }
@@ -403,6 +423,28 @@ class _CartScreenState extends State<CartScreen> {
     }
 
     await _openCardPayment(cart, order.id, order.latestPaymentId, order);
+  }
+
+  Future<void> _openLocationPicker() async {
+    final result = await Navigator.push<LocationPickerResult?>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationPickerScreen(
+          initialLatitude: _deliveryLatitude,
+          initialLongitude: _deliveryLongitude,
+        ),
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    setState(() {
+      _deliveryLatitude = result.latitude;
+      _deliveryLongitude = result.longitude;
+      if (result.address.isNotEmpty) {
+        _deliveryAddressController.text = result.address;
+      }
+    });
   }
 
   Future<void> _cancelAwaitingOrder(CartProvider cart, int orderId) async {
@@ -625,6 +667,19 @@ class _CartScreenState extends State<CartScreen> {
               prefixIcon: Icon(Icons.location_on_outlined),
             ),
           ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _openLocationPicker,
+            icon: Icon(
+              _deliveryLatitude != null ? Icons.check_circle : Icons.map_outlined,
+              size: 18,
+              color: _deliveryLatitude != null ? Colors.green : null,
+            ),
+            label: Text(
+              _deliveryLatitude != null ? 'Location Set — Change on Map' : 'Choose Exact Location on Map',
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
           const SizedBox(height: 12),
           TextField(
             controller: _contactPhoneController,
@@ -791,7 +846,24 @@ class _CartScreenState extends State<CartScreen> {
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.restaurant.name)),
-      body: body,
+      body: Stack(
+        children: [
+          body,
+          if (_placing)
+            Positioned.fill(
+              child: AbsorbPointer(
+                absorbing: true,
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    child: const Center(child: CircularProgressIndicator()),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

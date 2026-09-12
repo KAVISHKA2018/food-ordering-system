@@ -14,6 +14,9 @@ from .models import PhoneOTP
 
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
+from restaurants.models import Restaurant
+from .serializers import DeliveryStaffSerializer
+
 User = get_user_model()
 
 
@@ -202,6 +205,11 @@ class LoginWithPasswordView(APIView):
                 {"detail": "Incorrect username/phone number or password."},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        if user.role == 'DELIVERY_STAFF' and not user.delivery_approved:
+            return Response(
+                {"detail": "Your account has been deactivated. Please contact your restaurant."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         refresh = RefreshToken.for_user(user)
         return Response({
@@ -292,3 +300,82 @@ class ChangePhoneNumberView(APIView):
         user.phone_number = new_phone
         user.save()
         return Response(UserSerializer(user).data)
+
+# --- Delivery staff: restaurant admin creates and manages rider accounts
+# directly, like adding an employee ---
+
+class CreateDeliveryStaffView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role != 'RESTAURANT_ADMIN':
+            return Response({"detail": "Only restaurant admins can add delivery staff."}, status=status.HTTP_403_FORBIDDEN)
+
+        data = request.data
+        first_name = (data.get('first_name') or '').strip()
+        last_name = (data.get('last_name') or '').strip()
+        phone_number = (data.get('phone_number') or '').strip()
+        username = (data.get('username') or '').strip()
+        password = data.get('password') or ''
+
+        errors = {}
+        if not first_name:
+            errors['first_name'] = 'First name is required.'
+        if not username:
+            errors['username'] = 'Username is required.'
+        elif User.objects.filter(username=username).exists():
+            errors['username'] = 'This username is already taken.'
+        if not password or len(password) < 6:
+            errors['password'] = 'Password must be at least 6 characters.'
+
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        restaurant = Restaurant.objects.filter(owner=request.user).first()
+        if not restaurant:
+            return Response({"detail": "You don't have a restaurant set up yet."}, status=status.HTTP_400_BAD_REQUEST)
+
+        rider = User.objects.create(
+            username=username,
+            first_name=first_name,
+            last_name=last_name,
+            phone_number=phone_number,
+            role=User.Role.DELIVERY_STAFF,
+            delivery_restaurant=restaurant,
+            delivery_approved=True,  # active immediately — the admin created this account directly
+        )
+        rider.set_password(password)
+        rider.save()
+
+        return Response(DeliveryStaffSerializer(rider).data, status=status.HTTP_201_CREATED)
+
+
+class MyDeliveryStaffView(APIView):
+    """Lists every rider account this restaurant admin has created,
+    active and deactivated alike."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'RESTAURANT_ADMIN':
+            return Response({"detail": "Only restaurant admins can view this."}, status=status.HTTP_403_FORBIDDEN)
+        staff = User.objects.filter(delivery_restaurant__owner=request.user).order_by('-created_at')
+        return Response(DeliveryStaffSerializer(staff, many=True).data)
+
+
+class ToggleDeliveryStaffActiveView(APIView):
+    """Deactivate a rider (blocks their login / removes them from the
+    assignment list) or reactivate them — without deleting the account."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, staff_id):
+        if request.user.role != 'RESTAURANT_ADMIN':
+            return Response({"detail": "Only restaurant admins can do this."}, status=status.HTTP_403_FORBIDDEN)
+        staff = User.objects.filter(
+            id=staff_id, delivery_restaurant__owner=request.user
+        ).first()
+        if not staff:
+            return Response({"detail": "Delivery staff not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        staff.delivery_approved = not staff.delivery_approved
+        staff.save()
+        return Response(DeliveryStaffSerializer(staff).data)

@@ -37,3 +37,9 @@ class UserSerializer(serializers.ModelSerializer):
         # A plain PATCH to /me/ can freely update name/address/email/photo,
         # but any phone_number in that request body is silently ignored.
         read_only_fields = ['phone_number']
+
+
+class DeliveryStaffSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'first_name', 'last_name', 'phone_number', 'delivery_approved']

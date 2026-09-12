@@ -35,6 +35,11 @@ function presetRange(days) {
   return { start: formatDateInput(start), end: formatDateInput(end) };
 }
 
+function todayRange() {
+  const today = formatDateInput(new Date());
+  return { start: today, end: today };
+}
+
 export default function ReportsPage() {
   const [startDate, setStartDate] = useState(presetRange(30).start);
   const [endDate, setEndDate] = useState(presetRange(30).end);
@@ -65,6 +70,12 @@ export default function ReportsPage() {
     setEndDate(range.end);
   };
 
+  const applyToday = () => {
+    const range = todayRange();
+    setStartDate(range.start);
+    setEndDate(range.end);
+  };
+
   return (
     <Layout>
       <div style={styles.page}>
@@ -73,6 +84,7 @@ export default function ReportsPage() {
 
         <div style={styles.filterBar}>
           <div style={styles.presetGroup}>
+            <button style={styles.presetBtn} onClick={applyToday}>Today</button>
             <button style={styles.presetBtn} onClick={() => applyPreset(7)}>Last 7 Days</button>
             <button style={styles.presetBtn} onClick={() => applyPreset(30)}>Last 30 Days</button>
             <button style={styles.presetBtn} onClick={() => applyPreset(90)}>Last 90 Days</button>
@@ -113,6 +125,18 @@ export default function ReportsPage() {
               <div style={styles.summaryCard}>
                 <p style={styles.summaryLabel}>Avg. Order Value</p>
                 <p style={styles.summaryValue}>Rs. {data.summary.avg_order_value.toFixed(0)}</p>
+              </div>
+              <div style={styles.summaryCard}>
+                <p style={styles.summaryLabel}>💵 Cash Income</p>
+                <p style={{ ...styles.summaryValue, color: '#E8865A' }}>
+                  Rs. {(data.payment_breakdown.find((p) => p.method === 'CASH')?.total ?? 0).toFixed(0)}
+                </p>
+              </div>
+              <div style={styles.summaryCard}>
+                <p style={styles.summaryLabel}>💳 Card Income</p>
+                <p style={{ ...styles.summaryValue, color: '#2196F3' }}>
+                  Rs. {(data.payment_breakdown.find((p) => p.method === 'CARD')?.total ?? 0).toFixed(0)}
+                </p>
               </div>
             </div>
 

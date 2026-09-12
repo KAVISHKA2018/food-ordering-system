@@ -11,6 +11,7 @@ Future<bool> showPaymentConfirmDialog({
   required String orderTypeLabel,
   required double totalAmount,
   required String paymentMethodLabel,
+  String? note,
 }) async {
   final result = await showDialog<bool>(
     context: context,
@@ -24,6 +25,20 @@ Future<bool> showPaymentConfirmDialog({
           _confirmRow('Order Type', orderTypeLabel),
           _confirmRow('Total Amount', 'Rs. ${totalAmount.toStringAsFixed(0)}'),
           _confirmRow('Payment Method', paymentMethodLabel),
+          if (note != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                note,
+                style: const TextStyle(fontSize: 12, color: AppColors.textDark),
+              ),
+            ),
+          ],
         ],
       ),
       actions: [
@@ -33,7 +48,7 @@ Future<bool> showPaymentConfirmDialog({
         ),
         ElevatedButton(
           onPressed: () => Navigator.pop(context, true),
-          child: const Text('Confirm & Pay'),
+          child: const Text('Confirm'),
         ),
       ],
     ),

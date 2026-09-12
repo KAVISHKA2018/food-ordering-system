@@ -20,6 +20,10 @@ from django.db.models.functions import TruncDate
 from datetime import datetime, timedelta
 from .models import Order, TableSession, Payment, OrderItem
 
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
 
 def _complete_order_payment(payment):
     order = payment.order
@@ -80,6 +84,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if user.role == 'RESTAURANT_ADMIN':
             return Order.objects.filter(restaurant__owner=user)
+        if user.role == 'DELIVERY_STAFF':
+            return Order.objects.filter(assigned_delivery_staff=user)
         return Order.objects.filter(customer=user)
 
     def create(self, request, *args, **kwargs):
@@ -114,6 +120,65 @@ class OrderViewSet(viewsets.ModelViewSet):
             order.customer,
             title=f"Order #{order.id} Update",
             body=f"Your order is now {order.get_status_display()}.",
+            data={'type': 'order', 'id': order.id},
+        )
+
+        return Response(OrderSerializer(order).data)
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def assign_delivery_staff(self, request, pk=None):
+        """Restaurant admin assigns a READY delivery order to one of their
+        approved delivery staff — this is what moves it to Out for Delivery."""
+        order = self.get_object()
+        if order.restaurant.owner != request.user:
+            return Response({"detail": "Only the restaurant owner can assign deliveries."}, status=status.HTTP_403_FORBIDDEN)
+        if order.order_type != Order.OrderType.DELIVERY:
+            return Response({"detail": "Only Delivery orders can be assigned."}, status=status.HTTP_400_BAD_REQUEST)
+
+        staff_id = request.data.get('staff_id')
+        staff = User.objects.filter(
+            id=staff_id, delivery_restaurant=order.restaurant, delivery_approved=True
+        ).first()
+        if not staff:
+            return Response({"detail": "Invalid or unapproved delivery staff member."}, status=status.HTTP_400_BAD_REQUEST)
+
+        order.assigned_delivery_staff = staff
+        order.status = Order.Status.OUT_FOR_DELIVERY
+        order.save()
+
+        send_push_notification(
+            order.customer,
+            title=f"Order #{order.id} Update",
+            body="Your order is now out for delivery.",
+            data={'type': 'order', 'id': order.id},
+        )
+
+        return Response(OrderSerializer(order).data)
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def mark_delivered(self, request, pk=None):
+        """The assigned delivery staff member marks their delivery complete.
+        For Cash orders, this is also the real moment the Payment gets
+        confirmed — the rider has just collected it in person."""
+        order = self.get_object()
+        if order.assigned_delivery_staff != request.user:
+            return Response({"detail": "This delivery is not assigned to you."}, status=status.HTTP_403_FORBIDDEN)
+        if order.status != Order.Status.OUT_FOR_DELIVERY:
+            return Response({"detail": "This order is not out for delivery."}, status=status.HTTP_400_BAD_REQUEST)
+
+        pending_payment = order.payments.filter(status=Payment.Status.PENDING).order_by('-created_at').first()
+        if pending_payment and pending_payment.method == Payment.Method.CASH:
+            pending_payment.status = Payment.Status.COMPLETED
+            pending_payment.paid_at = timezone.now()
+            pending_payment.save()
+
+        order.status = Order.Status.COMPLETED
+        order.save()
+
+        send_push_notification(
+            order.customer,
+            title=f"Order #{order.id} Delivered",
+            body="Your order has been delivered. Enjoy your meal!",
             data={'type': 'order', 'id': order.id},
         )
 
@@ -219,6 +284,51 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return Response(OrderSerializer(order).data)
 
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def start_trip(self, request, pk=None):
+        """The assigned rider taps Start — records the moment and notifies
+        the customer their order is on the way."""
+        order = self.get_object()
+        if order.assigned_delivery_staff != request.user:
+            return Response({"detail": "This delivery is not assigned to you."}, status=status.HTTP_403_FORBIDDEN)
+        if order.status != Order.Status.OUT_FOR_DELIVERY:
+            return Response({"detail": "This order is not out for delivery."}, status=status.HTTP_400_BAD_REQUEST)
+
+        order.delivery_started_at = timezone.now()
+        order.save()
+
+        send_push_notification(
+            order.customer,
+            title="Rider On The Way",
+            body=f"Your rider is on the way with order #{order.id}!",
+            data={'type': 'order', 'id': order.id},
+        )
+
+        return Response(OrderSerializer(order).data)
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def update_rider_location(self, request, pk=None):
+        """Called periodically by the delivery app while a trip is active,
+        so the customer app can show the rider's live position."""
+        order = self.get_object()
+        if order.assigned_delivery_staff != request.user:
+            return Response({"detail": "This delivery is not assigned to you."}, status=status.HTTP_403_FORBIDDEN)
+        if order.status != Order.Status.OUT_FOR_DELIVERY:
+            return Response({"detail": "This order is not out for delivery."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            lat = float(request.data.get('latitude'))
+            lng = float(request.data.get('longitude'))
+        except (TypeError, ValueError):
+            return Response({"detail": "Valid latitude and longitude are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        order.rider_current_latitude = lat
+        order.rider_current_longitude = lng
+        order.rider_location_updated_at = timezone.now()
+        order.save()
+
+        return Response({"detail": "Location updated."})
+
 
 class TableSessionViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = TableSessionSerializer
@@ -268,12 +378,11 @@ class TableSessionViewSet(viewsets.ReadOnlyModelViewSet):
         if payment_method == 'CASH':
             session.status = TableSession.Status.PAYMENT_PENDING
             session.save()
-            send_push_notification(
-                session.customer,
-                title="Payment Confirmed",
-                body=f"Your payment for Table {session.table_number} has been confirmed. Thank you!",
-                data={'type': 'table_session', 'id': session.id},
-            )
+            # No notification here — the customer just REQUESTED cash
+            # payment, nothing has actually been confirmed yet. The real
+            # "Payment Confirmed" notification fires later, from
+            # _complete_table_session_payment(), only once the restaurant
+            # admin actually taps "Confirm Cash Payment Received".
 
         return Response({**TableSessionSerializer(session).data, 'payment_id': payment.id})
 

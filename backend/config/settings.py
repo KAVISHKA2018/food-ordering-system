@@ -167,4 +167,4 @@ STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
 # checkout — your phone's WebView just needs to reach this over WiFi,
 # unlike the webhook itself which needs true internet reachability
 # (handled separately by the Stripe CLI tunnel).
-PUBLIC_BASE_URL = 'http://192.168.1.5:8000'
+PUBLIC_BASE_URL = 'http://192.168.158.81:8000'

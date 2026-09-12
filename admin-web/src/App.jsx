@@ -10,6 +10,7 @@ import TablesPage from './pages/TablesPage';
 import PromotionsPage from './pages/PromotionsPage';
 import ReviewsPage from './pages/ReviewsPage';
 import ReportsPage from './pages/ReportsPage';
+import DeliveryStaffPage from './pages/DeliveryStaffPage';
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
           <Route path="/promotions" element={<ProtectedRoute><PromotionsPage /></ProtectedRoute>} />
           <Route path="/reviews" element={<ProtectedRoute><ReviewsPage /></ProtectedRoute>} />
           <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
+          <Route path="/delivery-staff" element={<ProtectedRoute><DeliveryStaffPage /></ProtectedRoute>} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

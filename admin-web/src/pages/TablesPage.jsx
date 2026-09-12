@@ -123,6 +123,12 @@ export default function TablesPage() {
                     <strong>Rs. {parseFloat(session.total_amount).toFixed(0)}</strong>
                   </div>
 
+                  {session.payment_method && (
+                    <p style={styles.paymentNote}>
+                      {session.payment_method === 'CARD' ? '💳 Card Payment' : '💵 Cash Payment'}
+                    </p>
+                  )}
+
                   {session.status === 'PAYMENT_PENDING' && (
                     <button
                       style={styles.confirmBtn}
@@ -169,5 +175,12 @@ const styles = {
     borderRadius: '12px',
     fontSize: '11px',
     fontWeight: 600,
+  },
+  confirmBtn: {
+    width: '100%', padding: '10px', backgroundColor: '#FB8C00', color: '#fff', border: 'none',
+    borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600,
+  },
+  paymentNote: {
+    fontSize: '12px', color: '#8E8E8E', margin: '0 0 10px',
   },
 };

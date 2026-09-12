@@ -25,6 +25,7 @@ class ReservationSerializer(serializers.ModelSerializer):
     restaurant_name = serializers.CharField(source='restaurant.name', read_only=True)
     payment_status = serializers.SerializerMethodField()
     current_bill_total = serializers.SerializerMethodField()
+    payment_method = serializers.SerializerMethodField()
 
     class Meta:
         model = Reservation
@@ -32,7 +33,7 @@ class ReservationSerializer(serializers.ModelSerializer):
             'id', 'customer', 'customer_username', 'restaurant', 'restaurant_name',
             'reservation_date', 'reservation_time', 'party_size',
             'status', 'table_number', 'table_session', 'special_requests', 'pre_order_total',
-            'current_bill_total', 'payment_status', 'pre_order_items', 'created_at', 'updated_at'
+            'current_bill_total', 'payment_status', 'payment_method', 'pre_order_items', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'customer', 'pre_order_total', 'created_at', 'updated_at']
 
@@ -54,6 +55,12 @@ class ReservationSerializer(serializers.ModelSerializer):
         if obj.table_session:
             return obj.table_session.total_amount
         return obj.pre_order_total
+
+    def get_payment_method(self, obj):
+        if not obj.table_session:
+            return None
+        payment = obj.table_session.payments.order_by('-created_at').first()
+        return payment.method if payment else None
 
 class ReservationCreateSerializer(serializers.ModelSerializer):
     pre_order_items = PreOrderItemCreateSerializer(many=True, required=False, write_only=True)

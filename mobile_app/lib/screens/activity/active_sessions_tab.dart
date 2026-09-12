@@ -12,6 +12,7 @@ import '../restaurant/restaurant_detail_screen.dart';
 import '../orders/food_review_screen.dart';
 import '../../widgets/payment_confirm_dialog.dart';
 import '../checkout/card_payment_webview_screen.dart';
+import '../orders/track_delivery_screen.dart';
 
 class ActiveSessionsTab extends StatefulWidget {
   final CartProvider cart;
@@ -657,6 +658,23 @@ class ActiveSessionsTabState extends State<ActiveSessionsTab> {
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
               ],
             ),
+            if (order.orderType == 'DELIVERY' && order.status == 'OUT_FOR_DELIVERY') ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => TrackDeliveryScreen(orderId: order.id)),
+                    );
+                  },
+                  icon: const Icon(Icons.map_outlined, size: 18),
+                  label: const Text('Track Order', style: TextStyle(fontSize: 13)),
+                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 10)),
+                ),
+              ),
+            ],
             if (isCancellable) ...[
               const SizedBox(height: 10),
               if (isActing)

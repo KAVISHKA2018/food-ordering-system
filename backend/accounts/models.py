@@ -14,6 +14,12 @@ class User(AbstractUser):
         choices=Role.choices,
         default=Role.CUSTOMER,
     )
+    # --- Delivery staff only ---
+    delivery_restaurant = models.ForeignKey(
+        'restaurants.Restaurant', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='delivery_staff'
+    )
+    delivery_approved = models.BooleanField(default=False)
     phone_number = models.CharField(max_length=15, blank=True, null=True)
     profile_picture = models.ImageField(
         upload_to='profile_pictures/', blank=True, null=True

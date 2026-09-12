@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import orderService from '../services/orderService';
 import DeliveryLocationMap from '../components/DeliveryLocationMap';
+import deliveryStaffService from '../services/deliveryStaffService';
 
 const STATUS_COLORS = {
   AWAITING_PAYMENT: '#E53935',
@@ -40,12 +41,24 @@ export default function OrdersPage() {
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('ALL');
   const [updatingId, setUpdatingId] = useState(null);
+  const [riders, setRiders] = useState([]);
+  const [assigningId, setAssigningId] = useState(null);
 
   useEffect(() => {
     loadOrders();
+    loadRiders();
     const interval = setInterval(loadOrders, 15000);
     return () => clearInterval(interval);
   }, []);
+
+  const loadRiders = async () => {
+    try {
+      const data = await deliveryStaffService.getMyStaff();
+      setRiders(data.filter((r) => r.delivery_approved));
+    } catch (err) {
+      // Non-critical — Assign dropdown just won't populate if this fails.
+    }
+  };
 
   const loadOrders = async () => {
     try {
@@ -85,6 +98,19 @@ export default function OrdersPage() {
       setUpdatingId(null);
     }
   };
+
+  const handleAssignRider = async (orderId, staffId) => {
+    if (!staffId) return;
+    setAssigningId(orderId);
+    try {
+      await deliveryStaffService.assignOrder(orderId, staffId);
+      loadOrders();
+    } catch (err) {
+      setError('Failed to assign rider.');
+    } finally {
+      setAssigningId(null);
+    }
+  };  
 
   const handleConfirmPayment = async (order) => {
     if (!confirm(`Confirm you have received Rs. ${parseFloat(order.total_amount).toFixed(0)} cash for order #${order.id}?`)) return;
@@ -170,10 +196,12 @@ export default function OrdersPage() {
                             latitude={order.delivery_latitude}
                             longitude={order.delivery_longitude}
                             orderId={order.id}
+                            riderLatitude={order.rider_current_latitude}
+                            riderLongitude={order.rider_current_longitude}
                           />
 
-                          <a                            
-                            href={`https://www.openstreetmap.org/?mlat=${order.delivery_latitude}&mlon=${order.delivery_longitude}#map=17/${order.delivery_latitude}/${order.delivery_longitude}`}
+                          <a
+                            href={`https://www.google.com/maps?q=${order.delivery_latitude},${order.delivery_longitude}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             style={styles.mapLink}
@@ -243,6 +271,32 @@ export default function OrdersPage() {
                   {isAwaitingCustomerPayment && (
                     <p style={styles.smallNote}>Waiting for customer to pay...</p>
                   )}
+
+                  {order.order_type === 'DELIVERY' &&
+                    ['READY', 'OUT_FOR_DELIVERY'].includes(order.status) && (
+                      <div style={styles.assignBox}>
+                        <label style={styles.assignLabel}>
+                          {order.assigned_delivery_staff_name
+                            ? `Assigned to: ${order.assigned_delivery_staff_name}`
+                            : 'Assign a rider'}
+                        </label>
+                        <select
+                          style={styles.assignSelect}
+                          disabled={assigningId === order.id}
+                          value={order.assigned_delivery_staff || ''}
+                          onChange={(e) => handleAssignRider(order.id, e.target.value)}
+                        >
+                          <option value="" disabled>
+                            {riders.length === 0 ? 'No active riders available' : 'Choose a rider...'}
+                          </option>
+                          {riders.map((rider) => (
+                            <option key={rider.id} value={rider.id}>
+                              {rider.first_name} {rider.last_name} (@{rider.username})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                   {!isFinal && !needsPaymentConfirmation && !isAwaitingCustomerPayment && (
                     <div style={styles.actions}>
@@ -315,5 +369,14 @@ const styles = {
   mapLink: {
     display: 'inline-block', marginTop: '4px', fontSize: '12px', color: '#2196F3',
     fontWeight: 600, textDecoration: 'none',
+  },
+  assignBox: {
+    backgroundColor: '#FFF3E0', borderRadius: '8px', padding: '10px', marginTop: '10px',
+  },
+  assignLabel: {
+    display: 'block', fontSize: '11px', fontWeight: 700, color: '#E8865A', marginBottom: '6px',
+  },
+  assignSelect: {
+    width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '13px',
   },
 };

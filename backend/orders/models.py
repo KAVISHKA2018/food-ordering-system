@@ -71,7 +71,16 @@ class Order(models.Model):
         blank=True,
         related_name='converted_orders'
     )
+
+    assigned_delivery_staff = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='assigned_deliveries'
+    )
     
+    delivery_started_at = models.DateTimeField(null=True, blank=True)   
+    rider_current_latitude = models.FloatField(null=True, blank=True)
+    rider_current_longitude = models.FloatField(null=True, blank=True)
+    rider_location_updated_at = models.DateTimeField(null=True, blank=True)
     order_type = models.CharField(max_length=20, choices=OrderType.choices)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)

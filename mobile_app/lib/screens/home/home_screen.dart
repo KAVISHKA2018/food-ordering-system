@@ -484,6 +484,19 @@ class _HomeScreenState extends State<HomeScreen> {
                                   style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                                 ),
                                 const SizedBox(height: 2),
+                                if (item.averageRating != null && item.averageRating! > 0) ...[
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.star, size: 12, color: Colors.amber),
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        '${item.averageRating!.toStringAsFixed(1)} (${item.reviewCount})',
+                                        style: const TextStyle(fontSize: 11, color: AppColors.textGrey, fontWeight: FontWeight.w600),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                ],
                                 Text(
                                   'Rs. ${item.price.toStringAsFixed(0)}',
                                   style: const TextStyle(

@@ -5,6 +5,7 @@ from .views import (
     RegisterWithDetailsView, LoginWithPasswordView,
     EnablePinView, DisablePinView, LoginWithPINView,
     ChangePhoneNumberView,
+    CreateDeliveryStaffView, MyDeliveryStaffView, ToggleDeliveryStaffActiveView,
 )
 
 urlpatterns = [
@@ -23,4 +24,8 @@ urlpatterns = [
     path('login-with-pin/', LoginWithPINView.as_view(), name='login-with-pin'),
 
     path('change-phone-number/', ChangePhoneNumberView.as_view(), name='change-phone-number'),
+
+    path('delivery-staff/create/', CreateDeliveryStaffView.as_view(), name='delivery-staff-create'),
+    path('delivery-staff/mine/', MyDeliveryStaffView.as_view(), name='delivery-staff-mine'),
+    path('delivery-staff/<int:staff_id>/toggle-active/', ToggleDeliveryStaffActiveView.as_view(), name='delivery-staff-toggle-active'),
 ]

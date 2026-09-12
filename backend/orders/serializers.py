@@ -43,6 +43,7 @@ class OrderSerializer(serializers.ModelSerializer):
     has_review = serializers.SerializerMethodField()
     latest_payment_id = serializers.SerializerMethodField()
     payment_method = serializers.SerializerMethodField()
+    assigned_delivery_staff_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -50,7 +51,10 @@ class OrderSerializer(serializers.ModelSerializer):
             'id', 'customer', 'customer_username', 'restaurant', 'restaurant_name', 'table_session', 'table_number',
             'order_type', 'status', 'delivery_address', 'delivery_latitude', 'delivery_longitude', 'contact_phone', 'alternative_phone',
             'subtotal_amount', 'discount_amount', 'promotion', 'promotion_title', 'total_amount', 'notes',
-            'payment_status', 'has_review', 'latest_payment_id', 'payment_method', 'items', 'created_at', 'updated_at'
+            'payment_status', 'has_review', 'latest_payment_id', 'payment_method',
+            'assigned_delivery_staff', 'assigned_delivery_staff_name', 'delivery_started_at',
+            'rider_current_latitude', 'rider_current_longitude', 'rider_location_updated_at',
+            'items', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'customer', 'subtotal_amount', 'discount_amount', 'total_amount', 'created_at', 'updated_at']
 
@@ -67,6 +71,11 @@ class OrderSerializer(serializers.ModelSerializer):
     def get_payment_method(self, obj):
         payment = obj.payments.order_by('-created_at').first()
         return payment.method if payment else None
+
+    def get_assigned_delivery_staff_name(self, obj):
+        if obj.assigned_delivery_staff:
+            return obj.assigned_delivery_staff.first_name or obj.assigned_delivery_staff.username
+        return None
 
     def get_payment_status(self, obj):
         if obj.order_type == Order.OrderType.DINE_IN and obj.table_session:
@@ -199,7 +208,17 @@ class OrderCreateSerializer(serializers.ModelSerializer):
                 method=Payment.Method.CASH if payment_method == 'CASH' else Payment.Method.CARD,
                 status=Payment.Status.PENDING,
             )
-            order.status = Order.Status.PAYMENT_PENDING if payment_method == 'CASH' else Order.Status.AWAITING_PAYMENT
+            if payment_method == 'CARD':
+                order.status = Order.Status.AWAITING_PAYMENT
+            elif order.order_type == Order.OrderType.TAKEAWAY:
+                # Cash at pickup — restaurant confirms receipt before cooking.
+                order.status = Order.Status.PAYMENT_PENDING
+            else:
+                # Cash on Delivery — the rider collects payment at drop-off,
+                # not the restaurant beforehand. The kitchen can start
+                # immediately; the Payment gets marked COMPLETED later when
+                # the rider taps "Cash Collected" (see mark_delivered below).
+                order.status = Order.Status.PENDING
 
         order.save()
         return order
@@ -210,12 +229,13 @@ class TableSessionSerializer(serializers.ModelSerializer):
     restaurant_name = serializers.CharField(source='restaurant.name', read_only=True)
     customer_username = serializers.CharField(source='customer.username', read_only=True)
     from_reservation = serializers.SerializerMethodField()
+    payment_method = serializers.SerializerMethodField()
 
     class Meta:
         model = TableSession
         fields = [
             'id', 'restaurant', 'restaurant_name', 'customer', 'customer_username',
-            'table_number', 'status', 'total_amount', 'orders', 'from_reservation',
+            'table_number', 'status', 'total_amount', 'orders', 'from_reservation', 'payment_method',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'customer', 'total_amount', 'created_at', 'updated_at']
@@ -223,6 +243,10 @@ class TableSessionSerializer(serializers.ModelSerializer):
     def get_from_reservation(self, obj):
         reservation = obj.reservations.first()
         return reservation.id if reservation else None
+
+    def get_payment_method(self, obj):
+        payment = obj.payments.order_by('-created_at').first()
+        return payment.method if payment else None
 
 
 class PaymentSerializer(serializers.ModelSerializer):
